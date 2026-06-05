@@ -1,0 +1,134 @@
+
+services:
+  api:
+    build:
+      context: ./backend
+      target: api
+    ports:
+      - "${PORT:-3001}:${PORT:-3001}"
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=${PORT:-3001}
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - WEB_URL=${WEB_URL:-http://localhost:5173}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
+      - COLLECTOR_URL=${COLLECTOR_URL:-http://collector:5000}
+      - API_INTERNAL_URL=${API_INTERNAL_URL:-http://api:3001}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - cem
+
+  web:
+    build: ./frontend
+    ports:
+      - "5173:80"
+    networks:
+      - cem
+
+  collector:
+    build: ./collector
+    environment:
+      - API_URL=${API_URL:-http://api:3001}
+    volumes:
+      - ./collector/config.yml:/app/config.yml:ro
+    command: ["--server", "--config", "/app/config.yml"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      - api
+    networks:
+      - cem
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollamadata:/root/.ollama
+    networks:
+      - cem
+    entrypoint: >
+      /bin/sh -c "ollama serve &
+      sleep 8 &&
+      ollama pull qwen3:4b &&
+      wait"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
+  worker:
+    build:
+      context: ./backend
+      target: worker
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
+      - OLLAMA_REPORT_MODEL=${OLLAMA_REPORT_MODEL:-qwen3:4b}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
+      - GEMINI_REPORT_MODEL=${GEMINI_REPORT_MODEL:-gemini-2.0-flash}
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - cem
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cem}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cem_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-cem_db}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cem -d cem_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cem
+    ports:                    # <-- AGREGA ESTO
+      - "5432:5432" 
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - cem
+
+volumes:
+  pgdata:
+  redisdata:
+  ollamadata:
+
+networks:
+  cem:
+    driver: bridge

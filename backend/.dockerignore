@@ -1,0 +1,6 @@
+*
+!package*.json
+!prisma/**
+!src/**
+!tsconfig.json
+!nest-cli.json

@@ -1,0 +1,32 @@
+# Dependencias
+node_modules/
+frontend/node_modules/
+backend/node_modules/
+
+# Compilación
+dist/
+build/
+.next/
+
+# Variables de entorno (¡Muy importante!)
+.env
+.env.local
+
+# Docker y Bases de Datos
+postgres_data/
+redis_data/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db

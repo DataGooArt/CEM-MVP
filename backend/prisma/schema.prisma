@@ -1,0 +1,224 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  sector    String?
+  createdAt DateTime @default(now()) @map("created_at")
+  assets    Asset[]
+  @@map("organizations")
+}
+
+model Asset {
+  id             String      @id @default(cuid())
+  organizationId String      @map("organization_id")
+  domain         String?
+  ip             String?
+  assetType      String      @map("asset_type")
+  criticality    String      @default("MEDIUM")
+  exposureScore  Float       @default(0) @map("exposure_score")
+  firstSeen      DateTime    @default(now()) @map("first_seen")
+  lastSeen       DateTime    @updatedAt @map("last_seen")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  findings       Finding[]
+  @@index([organizationId])
+  @@map("assets")
+}
+
+model Finding {
+  id          String      @id @default(cuid())
+  assetId     String      @map("asset_id")
+  category    String
+  severity    String
+  title       String
+  description String?
+  evidence    Json?       @default("{}")
+  sourceTool  String      @map("source_tool")
+  rawOutput   String?     @map("raw_output")
+  cve         String?
+  cvss        Float?
+  status      String      @default("OPEN")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  resolvedAt  DateTime?   @map("resolved_at")
+  remediationStatus    String?   @map("remediation_status")
+  remediationStartDate DateTime? @map("remediation_start_date")
+  remediationEndDate   DateTime? @map("remediation_end_date")
+  responsible          String?   @map("responsible")
+  postAnalysisDate     DateTime? @map("post_analysis_date")
+  closingDate          DateTime? @map("closing_date")
+  remediationEvidence  String?   @map("remediation_evidence")
+  closingNotes         String?   @map("closing_notes")
+  archivedAt           DateTime? @map("archived_at")
+  // ─── Deduplication ───────────────────────────────────────────
+  contentHash          String?   @map("content_hash")          // SHA-256(assetId|category|title|sourceTool)
+  seenCount            Int       @default(1) @map("seen_count") // incremented on each duplicate ingest
+  lastSeenAt           DateTime? @map("last_seen_at")           // updated every time the same finding reappears
+  // ─── Scan correlation ────────────────────────────────────────
+  scanId               String?   @map("scan_id")               // scanId of the LAST scan that detected this
+  firstScanId          String?   @map("first_scan_id")         // scanId of the FIRST scan that detected this
+  asset       Asset       @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  aiAnalysis  AiAnalysis?
+  @@index([assetId])
+  @@index([severity])
+  @@index([status])
+  @@index([createdAt])
+  @@index([archivedAt])
+  @@unique([assetId, contentHash])                              // DB-level uniqueness; NULL contentHash is exempt
+  @@map("findings")
+}
+
+model AiAnalysis {
+  id              String   @id @default(cuid())
+  findingId       String   @unique @map("finding_id")
+  summary         String
+  riskLevel       String   @map("risk_level")
+  remediation     String
+  businessImpact  String?  @map("business_impact")
+  remediationPlan Json?    @map("remediation_plan")
+  model           String   @default("llama3.2")
+  createdAt       DateTime @default(now()) @map("created_at")
+  finding         Finding  @relation(fields: [findingId], references: [id], onDelete: Cascade)
+  @@map("ai_analyses")
+}
+
+model MonitoredDomain {
+  id          String    @id @default(cuid())
+  domain      String    @unique
+  orgId       String    @default("org_demo") @map("org_id")
+  tools       String[]  @default(["nmap", "nuclei"])
+  cronExpr    String    @default("0 2 * * 1") @map("cron_expr")
+  scanProfile String    @default("standard") @map("scan_profile")
+  enabled     Boolean   @default(true)
+  lastScanned DateTime? @map("last_scanned")
+  nextScan    DateTime? @map("next_scan")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  @@map("monitored_domains")
+}
+
+model ScanSession {
+  id               String   @id @default(cuid())
+  scanId           String   @map("scan_id")            // x-scan-id header UUID — agrupa todas las herramientas de un mismo full-scan.sh
+  collectorId      String   @map("collector_id")        // x-collector-id (dominio o "kali")
+  tool             String                               // nmap | nuclei | nikto | whatweb | gobuster
+  orgId            String   @default("org_demo") @map("org_id")
+  findingsAccepted Int      @default(0)  @map("findings_accepted")
+  findingsErrors   Int      @default(0)  @map("findings_errors")
+  createdAt        DateTime @default(now()) @map("created_at")
+  @@index([scanId])
+  @@index([collectorId])
+  @@index([createdAt])
+  @@map("scan_sessions")
+}
+// ─── Scan Job — una unidad de escaneo completa ────────────────────────────────
+model ScanJob {
+  id          String    @id @default(cuid())
+  scanId      String    @unique @map("scan_id")
+  orgId       String    @default("org_demo") @map("org_id")
+  domain      String
+  collectorId String    @map("collector_id")
+  tools       String[]  @default([])
+  status      String    @default("RUNNING")  // RUNNING | DONE | ERROR
+  startedAt   DateTime  @default(now()) @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  @@index([orgId])
+  @@index([domain])
+  @@map("scan_jobs")
+}
+
+// ─── Scan Report — análisis agregado por escaneo ──────────────────────────────
+model ScanReport {
+  id                String   @id @default(cuid())
+  scanId            String   @unique @map("scan_id")
+  orgId             String   @default("org_demo") @map("org_id")
+  domain            String
+  collectorId       String   @map("collector_id")
+  tools             String[]
+  // Clasificación de hallazgos
+  newFindings       Int      @default(0) @map("new_findings")       // primera vez detectados
+  recurringFindings Int      @default(0) @map("recurring_findings") // ya conocidos, reconfirmados
+  staleFindings     Int      @default(0) @map("stale_findings")     // abiertos pero no vistos en este scan
+  totalOpen         Int      @default(0) @map("total_open")
+  // Distribución por severidad
+  bySeverity        Json     @default("{}") @map("by_severity")     // todos los OPEN del dominio
+  newBySeverity     Json     @default("{}") @map("new_by_severity") // solo los nuevos
+  // Tendencia
+  riskScore         Float    @default(0) @map("risk_score")
+  prevScanId        String?  @map("prev_scan_id")
+  riskScoreDelta    Float    @default(0) @map("risk_score_delta")   // positivo = empeora
+  durationSec       Int?     @map("duration_sec")
+  createdAt         DateTime @default(now()) @map("created_at")
+  @@index([orgId])
+  @@index([domain])
+  @@index([createdAt])
+  @@map("scan_reports")
+}
+
+model AlertRule {
+  id        String   @id @default(cuid())
+  name      String
+  severity  String[] // e.g. ["CRITICAL","HIGH"]
+  channel   String   @default("email")
+  target    String   // email address or webhook URL
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  @@map("alert_rules")
+}
+
+// ─── Audit Log — trazabilidad completa de cada hallazgo ──────────────────────
+model AuditLog {
+  id         String   @id @default(cuid())
+  type       String   // INGEST_RAW | NORMALIZED | AI_ENQUEUED | AI_ANALYZED
+  findingId  String?  @map("finding_id")
+  rawData    Json?    @map("raw_data")     // payload crudo del colector
+  parsedData Json?    @map("parsed_data")  // hallazgo normalizado
+  provider   String?                       // 'gemini' | 'ollama' (solo AI_ANALYZED)
+  model      String?                       // modelo usado
+  durationMs Int?     @map("duration_ms")  // ms que tardó la operación
+  createdAt  DateTime @default(now()) @map("created_at")
+  @@index([type])
+  @@index([findingId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model TelemetryEvent {
+  id        String   @id @default(cuid())
+  type      String
+  source    String
+  payload   Json
+  createdAt DateTime @default(now()) @map("created_at")
+  @@index([type])
+  @@index([createdAt])
+  @@map("telemetry_events")
+}
+
+// ─── AI Executive Report — informe ejecutivo de pentest generado por IA ───────
+model AiScanReport {
+  id                 String   @id @default(cuid())
+  scanId             String   @unique @map("scan_id")
+  asset              String
+  orgId              String   @default("org_demo") @map("org_id")
+  provider           String   // gemini | ollama | fallback
+  model              String
+  score              Int      // 1-10 (10 = riesgo máximo)
+  executiveSummary   String   @db.Text @map("executive_summary")
+  technicalSummary   String   @db.Text @map("technical_summary")
+  topRisks           Json     @map("top_risks")           // array de objetos
+  attackSurface      Json     @map("attack_surface")      // resumen técnico estructurado
+  remediationRoadmap Json     @map("remediation_roadmap") // fases immediate/shortTerm/mediumTerm
+  complianceFlags    Json?    @map("compliance_flags")    // GDPR, ISO27001, PCI-DSS, etc.
+  segmentedAnalysis  Json?    @map("segmented_analysis") // análisis IA segmentado por dominio (red/web/puertos/tls/secretos)
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+  @@index([orgId])
+  @@index([createdAt])
+  @@map("ai_scan_reports")
+}

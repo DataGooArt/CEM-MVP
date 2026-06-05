@@ -1,0 +1,209 @@
+# ─── Perfiles de escaneo ──────────────────────────────────────────────────────
+perfiles:
+
+  quick:
+    descripcion: "Reconocimiento rápido · 2–5 min"
+    duracion_estimada: "2-5 minutos"
+    habilitado:
+      nmap:        true
+      nuclei:      true
+      whatweb:     true
+      gobuster:    true
+      nikto:       false
+      sslscan:     false
+      ffuf:        false
+      subfinder:   false
+      httpx:       false
+      testssl:     false
+      dalfox:      false
+      sqlmap:      false
+      katana:      false
+      trufflehog:  false
+      amass:       false
+    nmap:
+      args: "-sS -F --open -T4 --max-retries 1"
+    nuclei:
+      severity: [critical, high]
+      rate_limit: 150
+      templates: [cves, misconfigurations]
+    nikto:
+      args: "-Tuning 1,2,3 -maxtime 120"
+      timeout: 180
+    whatweb:
+      args: "-a 1"
+    gobuster:
+      wordlist: /app/wordlists/common.txt
+      extensions: "php,html,js,txt,bak"
+      threads: 50
+    sslscan:
+      args: "--no-colour"
+    ffuf:
+      wordlist: /app/wordlists/common.txt
+      threads: 40
+    subfinder:
+      threads: 10
+      timeout: 60
+    httpx:
+      timeout: 15
+    testssl:
+      port: 443
+      timeout: 120
+    dalfox:
+      timeout: 120
+    sqlmap:
+      timeout: 300
+    katana:
+      depth: 2
+      timeout: 60
+      max_urls: 100
+    trufflehog:
+      timeout: 60
+    amass:
+      timeout: 120
+
+  standard:
+    descripcion: "Balance cobertura/ruido · 10–20 min (RECOMENDADO)"
+    duracion_estimada: "10-20 minutos"
+    habilitado:
+      nmap:        true
+      nuclei:      true
+      whatweb:     true
+      gobuster:    true
+      nikto:       true
+      sslscan:     true
+      ffuf:        false
+      subfinder:   true
+      httpx:       true
+      testssl:     true
+      dalfox:      false
+      sqlmap:      false
+      katana:      true
+      trufflehog:  true
+      amass:       false
+    nmap:
+      args: "-sV --script vuln,auth,banner,http-headers,ssl-cert,ssl-enum-ciphers -T4 --open"
+    nuclei:
+      severity: [critical, high, medium]
+      rate_limit: 100
+      templates: [cves, misconfigurations, exposures, network, ssl]
+    nikto:
+      args: "-Tuning 1,2,3,4,5,6 -maxtime 300"
+      timeout: 360
+    whatweb:
+      args: "-a 3"
+    gobuster:
+      wordlist: /app/wordlists/directory-list-2.3-medium.txt
+      extensions: "php,html,js,txt,bak,zip,env,config"
+      threads: 30
+    sslscan:
+      args: "--no-colour --show-certificate"
+    ffuf:
+      wordlist: /app/wordlists/raft-large-directories.txt
+      threads: 30
+    subfinder:
+      threads: 10
+      timeout: 120
+    httpx:
+      timeout: 30
+    testssl:
+      port: 443
+      timeout: 300
+    dalfox:
+      timeout: 300
+    sqlmap:
+      timeout: 600
+    katana:
+      depth: 3
+      timeout: 180
+      max_urls: 300
+    trufflehog:
+      timeout: 120
+    amass:
+      timeout: 300
+
+  deep:
+    descripcion: "Auditoría profunda / Red Team · 30 min–2 h"
+    duracion_estimada: "30-120 minutos"
+    habilitado:
+      nmap:        true
+      nuclei:      true
+      whatweb:     true
+      gobuster:    true
+      nikto:       true
+      sslscan:     true
+      ffuf:        true
+      subfinder:   true
+      httpx:       true
+      testssl:     true
+      dalfox:      true
+      sqlmap:      true
+      katana:      true
+      trufflehog:  true
+      amass:       true
+    nmap:
+      # -p- with -T2 can take hours; --top-ports 1000 covers 99% of real services
+      args: "-sV -sC -O --top-ports 1000 -T3 --open --script vuln,banner,default"
+    nuclei:
+      severity: [critical, high, medium, low, info]
+      rate_limit: 50
+      templates: [cves, misconfigurations, exposures, network, ssl, technologies, default-logins]
+    nikto:
+      args: "-Tuning 1,2,3,4,5,6,7,8,9,0 -maxtime 600"
+      timeout: 660
+    whatweb:
+      args: "-a 4 -v"
+    gobuster:
+      wordlist: /app/wordlists/directory-list-2.3-big.txt
+      extensions: "php,txt,html,js,bak,zip,old,config,sql,log"
+      threads: 20
+    sslscan:
+      args: "--no-colour --show-certificate --show-trusted"
+    ffuf:
+      wordlist: /app/wordlists/raft-large-directories.txt
+      threads: 40
+    subfinder:
+      threads: 20
+      timeout: 300
+    httpx:
+      timeout: 30
+    testssl:
+      port: 443
+      timeout: 600
+    dalfox:
+      timeout: 600
+    sqlmap:
+      timeout: 1200
+    katana:
+      depth: 5
+      timeout: 600
+      max_urls: 500
+    trufflehog:
+      timeout: 300
+    amass:
+      timeout: 600
+
+# ─── Configuración global del collector ───────────────────────────────────────
+collector:
+  wordlists_path: "/app/wordlists"
+  fallback_wordlist: "/usr/share/wordlists/dirb/common.txt"
+  delay_between_tools: 3   # segundos entre tools para no saturar el target
+  max_concurrent_domains: 3
+
+# ─── API backend ──────────────────────────────────────────────────────────────
+api:
+  url: http://api:3001
+  collector_id: kali-collector-01
+
+# ─── Perfil por defecto para escaneos CLI ─────────────────────────────────────
+default_profile: standard
+
+# ─── Targets para modo CLI ────────────────────────────────────────────────────
+targets:
+  # testphp.vulnweb.com — app de prueba de Acunetix, autorizada para escaneos
+  - id: vulnweb-php
+    host: testphp.vulnweb.com
+    tags: [web, test]
+  # demo.testfire.net — IBM AltoroMutual, app bancaria de prueba
+  - id: altoro-bank
+    host: demo.testfire.net
+    tags: [web, finance, test]
