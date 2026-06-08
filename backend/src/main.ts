@@ -14,7 +14,8 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   app.enableCors({ origin: true, credentials: true });
 
-  if (process.env.NODE_ENV !== 'production') {
+  // Swagger siempre activo (documentación interna — desactivar con SWAGGER_DISABLED=true en prod)
+  if (process.env.SWAGGER_DISABLED !== 'true') {
     const config = new DocumentBuilder()
       .setTitle('CEM API')
       .setDescription('Cyber Exposure Management — REST API')

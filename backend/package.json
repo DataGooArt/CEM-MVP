@@ -4,7 +4,8 @@
   "scripts": {
     "build": "nest build",
     "start": "nest start",
-    "start:dev": "nest start --watch",
+    "start:dev": "dotenv -e ../.env -- nest start --watch",
+    "start:dev:worker": "dotenv -e ../.env -- nest start worker --watch",
     "start:prod": "node dist/main",
     "start:worker": "node dist/worker",
     "prisma:generate": "prisma generate",
@@ -36,6 +37,7 @@
     "@types/node": "^20.0.0",
     "@types/nodemailer": "^6.4.0",
     "@types/xml2js": "^0.4.14",
+    "dotenv-cli": "^11.0.0",
     "prisma": "^5.0.0",
     "typescript": "^5.0.0"
   },

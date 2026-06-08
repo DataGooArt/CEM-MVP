@@ -9,8 +9,8 @@ services:
     environment:
       - NODE_ENV=${NODE_ENV:-production}
       - PORT=${PORT:-3001}
-      - DATABASE_URL=${DATABASE_URL}
-      - REDIS_URL=${REDIS_URL}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-cem}:${POSTGRES_PASSWORD:-cem_secret}@postgres:5432/${POSTGRES_DB:-cem_db}?schema=public
+      - REDIS_URL=redis://redis:6379
       - WEB_URL=${WEB_URL:-http://localhost:5173}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
@@ -79,14 +79,14 @@ services:
       target: worker
     environment:
       - NODE_ENV=${NODE_ENV:-production}
-      - DATABASE_URL=${DATABASE_URL}
-      - REDIS_URL=${REDIS_URL}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-cem}:${POSTGRES_PASSWORD:-cem_secret}@postgres:5432/${POSTGRES_DB:-cem_db}?schema=public
+      - REDIS_URL=redis://redis:6379
       - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3:4b}
       - OLLAMA_REPORT_MODEL=${OLLAMA_MODEL:-qwen3:4b}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
-      - GEMINI_REPORT_MODEL=${GEMINI_MODEL:-gemini-3.0-flash}
+      - GEMINI_REPORT_MODEL=${GEMINI_REPORT_MODEL:-gemini-2.0-flash}
       - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
       - SMTP_PORT=${SMTP_PORT:-587}
       - SMTP_USER=${SMTP_USER:-}
