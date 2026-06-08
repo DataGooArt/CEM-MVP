@@ -24,24 +24,43 @@ RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
 
 ## Paso 2: Crear el Plugin en Python (`collector/plugins/`)
 
-Crea un archivo llamado `mytool_plugin.py`. Su función principal es ejecutar el comando y retornar el output.
+Crea un archivo llamado `mytool_plugin.py`. Debe heredar de `BasePlugin` y retornar una lista de hallazgos normalizados.
 
 ```python
 import subprocess
 import logging
+from plugins.base import BasePlugin
 
-def run_scan(target):
-    """
-    Ejecuta la herramienta y devuelve el contenido crudo (JSON/XML/TXT)
-    """
-    try:
-        # Ejemplo: ejecutando subfinder
-        cmd = ["subfinder", "-d", target, "-silent", "-j"]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        return result.stdout
-    except Exception as e:
-        logging.error(f"Error en MyTool: {e}")
-        return None
+log = logging.getLogger(__name__)
+
+class MyToolPlugin(BasePlugin):
+    name = "mytool"
+    description = "Descripción breve de lo que hace la herramienta"
+
+    def run(self, target: dict, config: dict) -> list[dict]:
+        host = target["host"]
+        findings = []
+
+        # 1. Ejecutar binario
+        cmd = ["mytool", "-d", host]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        except Exception as e:
+            log.error(f"Error en MyTool: {e}")
+            return []
+
+        # 2. Parsear y normalizar al formato CEM
+        # (Este es un ejemplo simplificado)
+        findings.append(self._finding(
+            asset_id=host,
+            title="Vulnerabilidad detectada por MyTool",
+            severity="MEDIUM",
+            category="VULNERABILITY",
+            source_tool=self.name,
+            description="Detalles de lo encontrado...",
+            evidence={"raw_output": result.stdout[:500]}
+        ))
+        return findings
 ```
 
 Luego, regístralo en el orquestador principal (`collector/main.py` o similar) para que se ejecute durante el ciclo de escaneo.
@@ -76,6 +95,7 @@ El Worker debe generar objetos con esta estructura mínima:
 
 ## Paso 4: Pruebas
 
-Para probar el nuevo plugin sin esperar a un scan completo, puedes usar `curl` para enviar un archivo de ejemplo directamente a la API:
+1. **Swagger UI:** Abre `http://localhost:3001/api/docs` para ver el esquema esperado por el endpoint `/api/v1/collectors/upload/{tool}`.
+2. **Prueba manual:** Puedes usar `curl` para enviar un archivo de ejemplo:
 
 `curl -X POST http://localhost:3001/api/v1/collectors/upload/mytool -H "x-collector-id: debug" -H "Content-Type: application/json" --data @test_output.json`
