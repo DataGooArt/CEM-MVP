@@ -197,7 +197,7 @@ Devuelve ÚNICAMENTE este JSON:
         durationMs: Date.now() - t0,
       },
     });
-
-    await this.alertEngine.evaluate(finding, riskLevel);
+    // Nota: la alerta ya se dispara en NormalizationWorker al momento del ingest.
+    // No se vuelve a disparar aquí para evitar emails/webhooks duplicados.
   }
 }

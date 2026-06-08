@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Patch, Body, Param, Query, Headers, BadRequestException } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Body, Param, Query, Headers, BadRequestException, NotFoundException } from '@nestjs/common';
 import { IsString, IsOptional, IsNumber, IsObject } from 'class-validator';
 import { FindingsService } from './findings.service';
 
@@ -104,5 +104,28 @@ export class FindingsController {
   ) {
     if (!id) throw new BadRequestException('id required');
     return this.svc.updateTracking(id, body);
+  }
+
+  @Get(':id/analysis')
+  async getAnalysis(@Param('id') id: string) {
+    const analysis = await this.svc.getAnalysis(id);
+    if (!analysis) throw new NotFoundException(`No hay análisis IA para el finding ${id}`);
+    return analysis;
+  }
+
+  @Post(':id/analyze')
+  async triggerAnalysis(
+    @Param('id') id: string,
+    @Body() body: { provider?: 'gemini' | 'ollama' } = {},
+  ) {
+    return this.svc.triggerAnalysis(id, body.provider);
+  }
+
+  @Post('reanalyze-batch')
+  async reanalyzeBatch(
+    @Body() body: { findingIds: string[]; provider?: 'gemini' | 'ollama' },
+  ) {
+    if (!body.findingIds?.length) throw new BadRequestException('findingIds requerido');
+    return this.svc.reanalyzeBatch(body.findingIds, body.provider);
   }
 }

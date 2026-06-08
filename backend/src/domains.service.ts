@@ -122,7 +122,7 @@ export class DomainsService {
 
     const scanId = randomUUID();
     const collectorUrl = process.env.COLLECTOR_URL ?? 'http://collector:5000';
-    const apiInternalUrl = process.env.API_INTERNAL_URL ?? 'http://api:3001';
+    const apiInternalUrl = process.env.API_INTERNAL_URL ?? 'http://host.docker.internal:3001';
 
     // Only send an explicit tool list when the domain has been customized.
     // When tools match the profile defaults, omit `plugins` so the collector
@@ -140,6 +140,20 @@ export class DomainsService {
     const profileDefaults = PROFILE_DEFAULT_TOOLS[scanProfile] ?? PROFILE_DEFAULT_TOOLS['standard'];
     const storedTools = [...(domain.tools ?? [])].sort();
     const isCustomized = JSON.stringify(storedTools) !== JSON.stringify([...profileDefaults].sort());
+    const effectiveTools = isCustomized ? domain.tools : profileDefaults;
+
+    // Crear ScanJob ANTES de llamar al collector para evitar race condition
+    // (el collector puede enviar findings antes de que el ScanJob exista en DB)
+    await this.prisma.scanJob.create({
+      data: {
+        scanId,
+        orgId: 'org_demo',
+        domain: domain.domain,
+        collectorId: domain.domain,
+        tools: effectiveTools,
+        status: 'RUNNING',
+      },
+    }).catch(() => { /* no detener el scan si el registro falla */ });
 
     try {
       const response = await fetch(`${collectorUrl}/scan`, {
@@ -166,20 +180,6 @@ export class DomainsService {
         : err.message;
       throw new InternalServerErrorException(`Collector error: ${hint}`);
     }
-
-    // Crear registro ScanJob para correlación y reportes
-    // Usar los tools efectivos (defaults del perfil si no hay customización)
-    const effectiveTools = isCustomized ? domain.tools : profileDefaults;
-    await this.prisma.scanJob.create({
-      data: {
-        scanId,
-        orgId: 'org_demo',
-        domain: domain.domain,
-        collectorId: 'kali-collector-01',
-        tools: effectiveTools,
-        status: 'RUNNING',
-      },
-    }).catch(() => { /* no detener el scan si el registro falla */ });
 
     // Marcar último scan en el dominio
     await this.prisma.monitoredDomain.update({

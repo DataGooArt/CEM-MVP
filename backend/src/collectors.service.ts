@@ -513,6 +513,22 @@ export class CollectorsService {
       }).catch((err: Error) => this.logger.warn(`[ScanSession] Progress record failed: ${err.message}`));
     }
 
+    // Crear ScanJob si no existe (scans iniciados desde CLI/Kali sin pasar por la UI)
+    if (data.event === 'scan:started') {
+      this.prisma.scanJob.upsert({
+        where: { scanId: data.scanId },
+        update: {},
+        create: {
+          scanId: data.scanId,
+          orgId: 'org_demo',
+          domain: data.collectorId,
+          collectorId: data.collectorId,
+          tools: [],
+          status: 'RUNNING',
+        },
+      }).catch((err: Error) => this.logger.warn(`[ScanJob] Upsert on scan:started failed: ${err.message}`));
+    }
+
     // Marcar ScanJob como completado y encolar informe ejecutivo de IA
     if (data.event === 'scan:done') {
       this.prisma.scanJob.updateMany({

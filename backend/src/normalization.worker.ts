@@ -1,9 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Worker, Job, Queue } from 'bullmq';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { PrismaService } from './prisma.service';
 import { TelemetryService } from './telemetry.service';
 import { AlertEngine } from './alert.engine';
+
+const IS_IP_RE = /^\d{1,3}(\.\d{1,3}){3}$|^[0-9a-fA-F:]+:[0-9a-fA-F:]+$/;
 
 @Injectable()
 export class NormalizationWorker {
@@ -57,12 +59,13 @@ export class NormalizationWorker {
     // (asset may not exist yet on first run — re-checked below after upsert)
 
     if (!asset) {
+      const isIp = IS_IP_RE.test(data.assetId);
       asset = await this.prisma.asset.create({
         data: {
           organizationId: 'org_demo',
-          domain: data.assetId.includes('.') ? data.assetId : null,
-          ip: !data.assetId.includes('.') ? data.assetId : null,
-          assetType: 'DOMAIN',
+          domain: isIp ? null : data.assetId,
+          ip:     isIp ? data.assetId : null,
+          assetType: isIp ? 'IP' : 'DOMAIN',
           criticality: 'MEDIUM',
           exposureScore: 0,
         },
@@ -126,14 +129,15 @@ export class NormalizationWorker {
     let score = 0;
     let maxCvss = 0;
     for (const f of findings) {
-      score += (weights[f.severity] || 1) * 10;
+      score += weights[f.severity] || 1;
       if (f.cvss && f.cvss > maxCvss) maxCvss = f.cvss;
     }
-    const normalized = Math.min(100, Math.round((score / (findings.length * 100 + 1)) * 100 + maxCvss));
+    const baseScore = score * 10;
+    const normalized = Math.min(100, Math.round(baseScore + maxCvss / 10));
     await this.prisma.asset.update({ where: { id: asset.id }, data: { exposureScore: normalized } });
 
     await this.telemetry.publish({
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       type: 'FINDING_NORMALIZED',
       source: 'NormalizationWorker',
       payload: {

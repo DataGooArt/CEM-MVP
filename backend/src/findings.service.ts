@@ -8,6 +8,7 @@ export class FindingsService {
   constructor(
     private readonly prisma: PrismaService,
     @InjectQueue('findings-ingest') private readonly ingestQueue: Queue,
+    @InjectQueue('findings-ai')     private readonly aiQueue: Queue,
   ) {}
 
   async ingest(dto: any) {
@@ -172,5 +173,35 @@ export class FindingsService {
         INFO:     a.findings.filter(f => f.severity === 'INFO').length,
       },
     }));
+  }
+
+  async getAnalysis(findingId: string) {
+    return this.prisma.aiAnalysis.findUnique({
+      where: { findingId },
+    });
+  }
+
+  async triggerAnalysis(findingId: string, provider?: 'gemini' | 'ollama') {
+    const finding = await this.prisma.finding.findUnique({ where: { id: findingId } });
+    if (!finding) throw new Error(`Finding ${findingId} not found`);
+    const job = await this.aiQueue.add(
+      'analyze',
+      { findingId, ...(provider ? { provider } : {}) },
+      { attempts: 2, backoff: { type: 'fixed', delay: 3000 }, removeOnComplete: 50 },
+    );
+    return { queued: true, jobId: job.id, findingId };
+  }
+
+  async reanalyzeBatch(findingIds: string[], provider?: 'gemini' | 'ollama') {
+    const jobs = await Promise.all(
+      findingIds.map(id =>
+        this.aiQueue.add(
+          'analyze',
+          { findingId: id, ...(provider ? { provider } : {}) },
+          { attempts: 2, backoff: { type: 'fixed', delay: 3000 }, removeOnComplete: 50 },
+        ),
+      ),
+    );
+    return { queued: jobs.length, findingIds };
   }
 }
