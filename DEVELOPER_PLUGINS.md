@@ -62,10 +62,13 @@ El Worker debe generar objetos con esta estructura mínima:
 {
   assetId: string;      // ID del activo en DB
   title: string;        // Título descriptivo
-  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO'; // Basado en SEV_ORDER
   category: 'VULNERABILITY' | 'MISCONFIGURATION' | 'EXPOSURE';
   description: string;  // Detalles técnicos
   sourceTool: 'mytool'; // Nombre del plugin
+  evidence?: Record<string, any>; // Datos crudos útiles para el analista
+  cve?: string;         // Formato CVE-YYYY-NNNN
+  cvss?: number;        // Puntuación numérica
 }
 ```
 

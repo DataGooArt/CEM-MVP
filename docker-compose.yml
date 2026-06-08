@@ -25,7 +25,10 @@ services:
       - cem
 
   web:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:3001
     ports:
       - "5173:80"
     networks:
@@ -34,7 +37,12 @@ services:
   collector:
     build: ./collector
     environment:
+      # En modo híbrido (API nativa + collector en Docker) sobreescribe API_URL en .env:
+      #   API_URL=http://host.docker.internal:3001
+      # En modo full-Docker mantiene el valor por defecto http://api:3001
       - API_URL=${API_URL:-http://api:3001}
+    ports:
+      - "5000:5000"
     volumes:
       - ./collector/config.yml:/app/config.yml:ro
     command: ["--server", "--config", "/app/config.yml"]
@@ -45,8 +53,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-    depends_on:
-      - api
     networks:
       - cem
 
@@ -77,11 +83,11 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
       - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
-      - OLLAMA_REPORT_MODEL=${OLLAMA_REPORT_MODEL:-qwen3:4b}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3:4b}
+      - OLLAMA_REPORT_MODEL=${OLLAMA_MODEL:-qwen3:4b}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
-      - GEMINI_REPORT_MODEL=${GEMINI_REPORT_MODEL:-gemini-2.0-flash}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3-flash-preview}
+      - GEMINI_REPORT_MODEL=${GEMINI_MODEL:-gemini-3-flash-preview}
       - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
       - SMTP_PORT=${SMTP_PORT:-587}
       - SMTP_USER=${SMTP_USER:-}
@@ -104,18 +110,20 @@ services:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U cem -d cem_db"]
-      interval: 5s
+      interval: 3s
       timeout: 5s
       retries: 5
     networks:
       - cem
-    ports:                    # <-- AGREGA ESTO
-      - "5432:5432" 
+    ports:
+      - "5432:5432"
   redis:
     image: redis:7-alpine
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
       - redisdata:/data
+    ports:
+      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

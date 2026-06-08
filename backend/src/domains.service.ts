@@ -160,7 +160,11 @@ export class DomainsService {
         throw new Error(`Collector responded ${response.status}: ${text}`);
       }
     } catch (err: any) {
-      throw new InternalServerErrorException(`Collector unavailable: ${err.message}`);
+      const isConnErr = err.cause?.code === 'ECONNREFUSED' || err.name === 'TimeoutError' || err.message?.includes('ECONNREFUSED');
+      const hint = isConnErr
+        ? `Collector no disponible en ${collectorUrl}. En desarrollo local arranca el collector con Docker: docker compose up -d collector`
+        : err.message;
+      throw new InternalServerErrorException(`Collector error: ${hint}`);
     }
 
     // Crear registro ScanJob para correlación y reportes
