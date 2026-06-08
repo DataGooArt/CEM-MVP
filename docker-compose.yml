@@ -37,10 +37,9 @@ services:
   collector:
     build: ./collector
     environment:
-      # En modo híbrido (API nativa + collector en Docker) sobreescribe API_URL en .env:
-      #   API_URL=http://host.docker.internal:3001
-      # En modo full-Docker mantiene el valor por defecto http://api:3001
-      - API_URL=${API_URL:-http://api:3001}
+      # Modo híbrido (API nativa + collector en Docker): apunta al host
+      # Modo full-Docker: sobreescribe en .env con API_URL=http://api:3001
+      - API_URL=${API_URL:-http://host.docker.internal:3001}
     ports:
       - "5000:5000"
     volumes:
