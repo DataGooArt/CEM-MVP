@@ -2,6 +2,7 @@ import {
   Controller, Get, Post, Patch, Delete, Body, Param, Query,
   NotFoundException, ValidationPipe, UsePipes, Logger,
 } from '@nestjs/common';
+import { Public } from './common/public.decorator';
 import { IsString, IsArray, IsOptional, IsBoolean, IsIn, ArrayMinSize } from 'class-validator';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -39,6 +40,7 @@ class UpdateAlertRuleDto {
   @IsOptional() @IsBoolean() enabled?: boolean;
 }
 
+@Public()
 @Controller('api/v1')
 export class AlertsController {
   private readonly logger = new Logger(AlertsController.name);

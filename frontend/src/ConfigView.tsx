@@ -1,5 +1,7 @@
-import { useState } from 'react'
-import { ROLE_META, type Role } from './auth'
+import { useState, useEffect } from 'react'
+import UsersManager from './UsersManager'
+import RolesManager from './RolesManager'
+import { fetchMyOrg, updateOrg, uploadOrgLogo } from './api'
 
 const SYSTEM_SECTIONS = [
   {
@@ -43,16 +45,98 @@ const SYSTEM_SECTIONS = [
   },
 ]
 
-const USERS_MOCK: { id: string; name: string; email: string; role: Role }[] = [
-  { id: '1', name: 'Admin Sistema',        email: 'admin@cem.local',      role: 'admin'      },
-  { id: '2', name: 'Supervisor Seguridad', email: 'supervisor@cem.local', role: 'supervisor' },
-  { id: '3', name: 'Consultor Visor',      email: 'visor@cem.local',      role: 'viewer'     },
-]
-
 const ALL_NAV = [
   ...SYSTEM_SECTIONS.map(s => ({ id: s.id, title: s.title, icon: s.icon })),
-  { id: 'users', title: 'Usuarios y roles', icon: '👥' },
+  { id: 'empresa', title: 'Empresa', icon: '🏢' },
+  { id: 'users', title: 'Usuarios', icon: '👤' },
+  { id: 'roles', title: 'Roles', icon: '🔑' },
 ]
+
+// ─── Org settings form ────────────────────────────────────────────────────────
+function OrgSettingsPanel() {
+  const [org, setOrg]         = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving]   = useState(false)
+  const [saved, setSaved]     = useState(false)
+  const [error, setError]     = useState('')
+  const [logoFile, setLogoFile] = useState<File | null>(null)
+
+  useEffect(() => {
+    fetchMyOrg().then(setOrg).catch(() => setOrg(null)).finally(() => setLoading(false))
+  }, [])
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault()
+    if (!org) return
+    setSaving(true); setError('')
+    try {
+      if (logoFile) {
+        const r = await uploadOrgLogo(org.id, logoFile)
+        setOrg((o: any) => ({ ...o, logoUrl: r.logoUrl }))
+        setLogoFile(null)
+      }
+      await updateOrg(org.id, {
+        name: org.name, legalName: org.legalName, nit: org.nit, sector: org.sector,
+        address: org.address, city: org.city, country: org.country,
+        phone: org.phone, contactEmail: org.contactEmail,
+      })
+      setSaved(true); setTimeout(() => setSaved(false), 2500)
+    } catch (e: any) { setError(e.message) } finally { setSaving(false) }
+  }
+
+  if (loading) return <p className="text-slate-500 text-sm">Cargando datos de la empresa...</p>
+
+  const field = (label: string, key: string, type = 'text') => (
+    <div key={key} className="flex flex-col gap-1.5">
+      <label className="text-xs font-medium text-slate-400">{label}</label>
+      <input type={type} value={org?.[key] ?? ''} onChange={e => setOrg((o: any) => ({...o, [key]: e.target.value}))}
+        className="w-full max-w-sm bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-sky-500"/>
+    </div>
+  )
+
+  return (
+    <form onSubmit={handleSave} className="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-700 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-slate-300">🏢 Datos de la empresa</h3>
+      </div>
+      <div className="p-5 space-y-4">
+        {error && <p className="text-rose-400 text-sm">{error}</p>}
+
+        {/* Logo */}
+        <div className="flex items-center gap-4">
+          {org?.logoUrl
+            ? <img src={org.logoUrl} alt="Logo" className="w-16 h-16 rounded-xl object-contain bg-slate-800 border border-slate-700 p-2"/>
+            : <div className="w-16 h-16 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-2xl">🏢</div>
+          }
+          <div>
+            <label className="text-xs font-medium text-slate-400 block mb-1">Logo de la empresa (PNG/JPG, máx. 2MB)</label>
+            <input type="file" accept="image/*" onChange={e => setLogoFile(e.target.files?.[0] ?? null)}
+              className="text-sm text-slate-400 file:mr-3 file:px-3 file:py-1 file:rounded file:border-0 file:bg-slate-700 file:text-slate-300 file:text-xs cursor-pointer"/>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {field('Nombre comercial', 'name')}
+          {field('Razón social / Nombre legal', 'legalName')}
+          {field('NIT / RUC / RFC', 'nit')}
+          {field('Sector', 'sector')}
+          {field('Dirección', 'address')}
+          {field('Ciudad', 'city')}
+          {field('País', 'country')}
+          {field('Teléfono', 'phone', 'tel')}
+          {field('Correo de contacto', 'contactEmail', 'email')}
+        </div>
+
+        <div className="flex justify-end pt-2">
+          <button type="submit" disabled={saving}
+            className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${saved ? 'bg-emerald-600 text-white' : 'bg-sky-600 hover:bg-sky-500 text-white'} disabled:opacity-60`}>
+            {saving ? 'Guardando...' : saved ? '✓ Guardado' : 'Guardar cambios'}
+          </button>
+        </div>
+      </div>
+    </form>
+  )
+}
 
 export default function ConfigView() {
   const [section, setSection]   = useState('Organización')
@@ -77,7 +161,7 @@ export default function ConfigView() {
           <h2 className="text-xl font-semibold text-slate-200">Configuración del sistema</h2>
           <p className="text-slate-500 text-sm mt-0.5">Parámetros globales, integraciones y gestión de usuarios</p>
         </div>
-        {section !== 'Usuarios y roles' && (
+        {!['Usuarios', 'Roles', 'Empresa'].includes(section) && (
           <button
             onClick={handleSave}
             className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
@@ -110,60 +194,16 @@ export default function ConfigView() {
 
         {/* Content panel */}
         <div className="lg:col-span-3">
-          {section === 'Usuarios y roles' ? (
-            <div className="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden">
-              <div className="px-5 py-4 border-b border-slate-700 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-300">Usuarios del sistema</h3>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
-                  {USERS_MOCK.length} usuarios
-                </span>
-              </div>
-
-              {/* Role legend */}
-              <div className="px-5 py-3 border-b border-slate-800 bg-slate-800/30">
-                <div className="flex flex-wrap gap-x-6 gap-y-2">
-                  {(Object.entries(ROLE_META) as [Role, (typeof ROLE_META)[Role]][]).map(([role, meta]) => (
-                    <div key={role} className="flex items-center gap-2">
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${meta.badgeCls}`}>
-                        {meta.label}
-                      </span>
-                      <span className="text-xs text-slate-500">{meta.description}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="divide-y divide-slate-800">
-                {USERS_MOCK.map(u => {
-                  const meta     = ROLE_META[u.role]
-                  const initials = u.name.split(' ').map(n => n[0]).join('').slice(0, 2)
-                  return (
-                    <div key={u.id} className="px-5 py-3.5 flex items-center gap-4">
-                      <div className="w-9 h-9 rounded-full bg-slate-700 border border-slate-600 flex items-center justify-center text-xs font-bold text-slate-300 shrink-0">
-                        {initials}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-200">{u.name}</p>
-                        <p className="text-xs text-slate-500">{u.email}</p>
-                      </div>
-                      <span className={`shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full border ${meta.badgeCls}`}>
-                        {meta.label}
-                      </span>
-                      <span className="flex items-center gap-1.5 text-xs text-emerald-400 shrink-0">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
-                        Activo
-                      </span>
-                    </div>
-                  )
-                })}
-              </div>
-
-              <div className="px-5 py-3 bg-slate-800/40 border-t border-slate-800">
-                <p className="text-xs text-slate-500 italic">
-                  En esta versión demo los cambios de usuarios no persisten. La gestión completa de RBAC estará disponible en la versión de producción.
-                </p>
-              </div>
+          {section === 'Usuarios' ? (
+            <div className="bg-slate-900 border border-slate-700 rounded-xl p-5">
+              <UsersManager />
             </div>
+          ) : section === 'Roles' ? (
+            <div className="bg-slate-900 border border-slate-700 rounded-xl p-5">
+              <RolesManager />
+            </div>
+          ) : section === 'Empresa' ? (
+            <OrgSettingsPanel />
           ) : activeSection ? (
             <div className="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden">
               <div className="px-5 py-4 border-b border-slate-700">

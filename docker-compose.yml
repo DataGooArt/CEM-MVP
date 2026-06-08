@@ -16,6 +16,8 @@ services:
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
       - COLLECTOR_URL=${COLLECTOR_URL:-http://collector:5000}
       - API_INTERNAL_URL=${API_INTERNAL_URL:-http://api:3001}
+    volumes:
+      - uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -91,6 +93,8 @@ services:
       - SMTP_PORT=${SMTP_PORT:-587}
       - SMTP_USER=${SMTP_USER:-}
       - SMTP_PASS=${SMTP_PASS:-}
+    volumes:
+      - uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -135,6 +139,7 @@ volumes:
   pgdata:
   redisdata:
   ollamadata:
+  uploads:
 
 networks:
   cem:

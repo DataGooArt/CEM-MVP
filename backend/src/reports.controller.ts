@@ -2,7 +2,9 @@ import { Controller, Get, Post, Param, Query } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { ReportsService } from './reports.service';
+import { Public } from './common/public.decorator';
 
+@Public()
 @Controller('api/v1/reports')
 export class ReportsController {
   constructor(

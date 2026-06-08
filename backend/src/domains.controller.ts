@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from '@nestjs/common';
 import { IsString, IsOptional, IsArray, IsBoolean, Matches } from 'class-validator';
 import { DomainsService } from './domains.service';
+import { Public } from './common/public.decorator';
 
 // Accepts: hostname (example.com, sub.example.co.uk),
 //          IPv4 (192.168.1.1), IPv4 CIDR (192.168.1.0/24)
@@ -45,6 +46,7 @@ class UpdateDomainDto {
   scanProfile?: string;
 }
 
+@Public()
 @Controller('api/v1/domains')
 export class DomainsController {
   constructor(private readonly svc: DomainsService) {}

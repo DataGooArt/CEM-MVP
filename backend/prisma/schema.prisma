@@ -9,12 +9,69 @@ datasource db {
 }
 
 model Organization {
-  id        String   @id @default(cuid())
-  name      String
-  sector    String?
-  createdAt DateTime @default(now()) @map("created_at")
-  assets    Asset[]
+  id                   String   @id @default(cuid())
+  name                 String
+  legalName            String?  @map("legal_name")
+  nit                  String?
+  sector               String?
+  address              String?
+  city                 String?
+  country              String?  @default("Colombia")
+  phone                String?
+  contactEmail         String?  @map("contact_email")
+  logoUrl              String?  @map("logo_url")
+  subscriptionPlan     String   @default("FREE") @map("subscription_plan") // FREE | PRO | ENTERPRISE
+  notificationSettings Json?    @default("{}") @map("notification_settings")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+  assets               Asset[]
+  users                User[]
+  roles                Role[]
   @@map("organizations")
+}
+
+// ─── Auth & Users ─────────────────────────────────────────────────────────────
+model User {
+  id             String         @id @default(cuid())
+  email          String         @unique
+  passwordHash   String         @map("password_hash")
+  name           String
+  organizationId String         @map("organization_id")
+  roleId         String?        @map("role_id")
+  isActive       Boolean        @default(true) @map("is_active")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role           Role?          @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  refreshTokens  RefreshToken[]
+  @@index([organizationId])
+  @@index([email])
+  @@map("users")
+}
+
+model Role {
+  id             String       @id @default(cuid())
+  name           String
+  organizationId String?      @map("organization_id")  // null = rol global del sistema
+  permissions    String[]     @default([])
+  isDefault      Boolean      @default(false) @map("is_default")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  users          User[]
+  @@index([organizationId])
+  @@map("roles")
+}
+
+model RefreshToken {
+  id         String    @id @default(cuid())
+  tokenHash  String    @unique @map("token_hash") // SHA-256 del token
+  userId     String    @map("user_id")
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@map("refresh_tokens")
 }
 
 model Asset {
@@ -64,6 +121,10 @@ model Finding {
   // ─── Scan correlation ────────────────────────────────────────
   scanId               String?   @map("scan_id")               // scanId of the LAST scan that detected this
   firstScanId          String?   @map("first_scan_id")         // scanId of the FIRST scan that detected this
+  // ─── Manual / External source ────────────────────────────────────────────
+  source               String    @default("SCAN")            // SCAN | PENTEST | COMPLIANCE | BUG_BOUNTY | INTERNAL | EXTERNAL_CLIENT
+  isManual             Boolean   @default(false) @map("is_manual")
+  evidenceFiles        Json?     @default("[]") @map("evidence_files")   // array of stored file paths
   asset       Asset       @relation(fields: [assetId], references: [id], onDelete: Cascade)
   aiAnalysis  AiAnalysis?
   @@index([assetId])

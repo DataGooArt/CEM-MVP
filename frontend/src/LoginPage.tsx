@@ -12,10 +12,13 @@ export default function LoginPage() {
   const loginError = useAuth(s => s.loginError)
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
+  const [loading, setLoading]   = useState(false)
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    login(email, password)
+    setLoading(true)
+    await login(email, password)
+    setLoading(false)
   }
 
   function fillDemo(cred: (typeof DEMO_CREDS)[number]) {
@@ -77,9 +80,10 @@ export default function LoginPage() {
 
             <button
               type="submit"
-              className="w-full bg-sky-600 hover:bg-sky-500 active:bg-sky-700 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm mt-1"
+              disabled={loading}
+              className="w-full bg-sky-600 hover:bg-sky-500 active:bg-sky-700 disabled:opacity-60 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm mt-1"
             >
-              Entrar
+              {loading ? 'Verificando...' : 'Entrar'}
             </button>
           </form>
         </div>

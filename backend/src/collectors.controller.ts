@@ -3,7 +3,9 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { CollectorsService } from './collectors.service';
+import { Public } from './common/public.decorator';
 
+@Public()
 @Controller('api/v1/collectors')
 export class CollectorsController {
   constructor(private readonly svc: CollectorsService) {}

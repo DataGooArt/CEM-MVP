@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { BullModule } from '@nestjs/bullmq';
 import { PrismaService } from './prisma.service';
 import { FindingsController } from './findings.controller';
@@ -16,6 +17,12 @@ import { RealtimeGateway } from './realtime.gateway';
 import { TelemetryService } from './telemetry.service';
 import { ReportsController } from './reports.controller';
 import { ReportsService } from './reports.service';
+// New modules
+import { AuthModule } from './auth/auth.module';
+import { JwtAuthGuard } from './auth/jwt-auth.guard';
+import { UsersModule } from './users/users.module';
+import { RolesModule } from './roles/roles.module';
+import { OrganizationsModule } from './organizations/organizations.module';
 
 @Module({
   imports: [
@@ -25,8 +32,18 @@ import { ReportsService } from './reports.service';
     BullModule.registerQueue({ name: 'findings-ingest' }),
     BullModule.registerQueue({ name: 'findings-ai' }),
     BullModule.registerQueue({ name: 'scan-reports-ai' }),
+    AuthModule,
+    UsersModule,
+    RolesModule,
+    OrganizationsModule,
   ],
   controllers: [FindingsController, CollectorsController, AlertsController, DomainsController, ReportsController],
-  providers: [PrismaService, FindingsService, CollectorsService, DomainsService, NormalizationWorker, AiAnalysisWorker, ScanReportWorker, AlertEngine, RealtimeGateway, TelemetryService, ReportsService],
+  providers: [
+    PrismaService, FindingsService, CollectorsService, DomainsService,
+    NormalizationWorker, AiAnalysisWorker, ScanReportWorker, AlertEngine,
+    RealtimeGateway, TelemetryService, ReportsService,
+    // Guard JWT global — @Public() excluye endpoints
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+  ],
 })
 export class AppModule {}

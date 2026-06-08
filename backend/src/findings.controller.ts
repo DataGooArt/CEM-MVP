@@ -1,6 +1,11 @@
-import { Controller, Post, Get, Patch, Body, Param, Query, Headers, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Body, Param, Query, Headers, BadRequestException, NotFoundException, UploadedFile, UseInterceptors, Res } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { Response } from 'express';
 import { IsString, IsOptional, IsNumber, IsObject } from 'class-validator';
+import { ApiTags, ApiBearerAuth, ApiConsumes, ApiOperation } from '@nestjs/swagger';
 import { FindingsService } from './findings.service';
+import { Public } from './common/public.decorator';
+import { csvMulterOptions, evidenceMulterOptions } from './common/multer.config';
 
 class IngestDto {
   @IsString() assetId: string;
@@ -14,10 +19,13 @@ class IngestDto {
   @IsOptional() @IsNumber() cvss?: number;
 }
 
+@ApiTags('findings')
+@ApiBearerAuth()
 @Controller('api/v1/findings')
 export class FindingsController {
   constructor(private readonly svc: FindingsService) {}
 
+  @Public()
   @Post('ingest')
   async ingest(
     @Body() dto: IngestDto,
@@ -128,4 +136,65 @@ export class FindingsController {
     if (!body.findingIds?.length) throw new BadRequestException('findingIds requerido');
     return this.svc.reanalyzeBatch(body.findingIds, body.provider);
   }
+
+  // ─── Manual finding ──────────────────────────────────────────────────────
+  @Post('manual')
+  @ApiOperation({ summary: 'Crear hallazgo manual (pentesting, cumplimiento, bug bounty, etc.)' })
+  async createManual(@Body() dto: {
+    organizationId: string;
+    assetTarget: string;
+    source: string;
+    category: string;
+    severity: string;
+    title: string;
+    description?: string;
+    cve?: string;
+    cvss?: number;
+    responsible?: string;
+    remediationEndDate?: string;
+  }) {
+    if (!dto.organizationId) throw new BadRequestException('organizationId requerido');
+    if (!dto.assetTarget) throw new BadRequestException('assetTarget requerido');
+    return this.svc.createManual(dto);
+  }
+
+  // ─── CSV Import ───────────────────────────────────────────────────────────
+  @Get('import/template')
+  @ApiOperation({ summary: 'Descargar plantilla CSV para importar hallazgos' })
+  downloadTemplate(@Res() res: Response) {
+    const buffer = this.svc.getCsvTemplate();
+    res.set({
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="cem-hallazgos-plantilla.csv"',
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  }
+
+  @Post('import')
+  @ApiOperation({ summary: 'Importar hallazgos desde archivo CSV/Excel' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', csvMulterOptions))
+  async importCsv(
+    @UploadedFile() file: Express.Multer.File,
+    @Body('organizationId') orgId: string,
+  ) {
+    if (!orgId) throw new BadRequestException('organizationId requerido');
+    if (!file) throw new BadRequestException('Archivo requerido');
+    return this.svc.importFromCsv(file.path, orgId);
+  }
+
+  // ─── Evidence upload ─────────────────────────────────────────────────────
+  @Post(':id/evidence')
+  @ApiOperation({ summary: 'Adjuntar archivo de evidencia a un hallazgo (PDF/imagen/docx, máx 10MB)' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', evidenceMulterOptions))
+  async uploadEvidence(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) throw new BadRequestException('Archivo requerido');
+    return this.svc.addEvidenceFile(id, file.filename, file.originalname);
+  }
 }
+

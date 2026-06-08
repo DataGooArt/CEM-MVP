@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { fetchRemediationFindings, triggerAnalysis, updateFindingTracking } from './api'
+import { fetchRemediationFindings, triggerAnalysis, updateFindingTracking, createManualFinding, importFindingsFromCsv, getFindingsImportTemplateUrl } from './api'
 import RemediationTracker from './RemediationTracker'
 import RemediationHistory from './RemediationHistory'
 
@@ -105,6 +105,41 @@ export default function RemediationView({ orgId = 'org_demo', readOnly = false }
   const [reanalyzingCards, setReanalyzingCards] = useState<Set<string>>(new Set())
   const queryClient = useQueryClient()
 
+  // ── Manual finding modal ──
+  const [showManual, setShowManual] = useState(false)
+  const [manualForm, setManualForm] = useState({ assetTarget: '', source: 'PENTEST', category: '', severity: 'HIGH', title: '', description: '', cve: '', responsible: '', remediationEndDate: '' })
+  const [manualError, setManualError] = useState('')
+  const [manualSaving, setManualSaving] = useState(false)
+
+  // ── CSV import ──
+  const [showImport, setShowImport] = useState(false)
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importResult, setImportResult] = useState<{ imported: number; errors: { row: number; error: string }[] } | null>(null)
+  const [importLoading, setImportLoading] = useState(false)
+
+  async function handleManualSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setManualError(''); setManualSaving(true)
+    try {
+      await createManualFinding({ ...manualForm, organizationId: orgId })
+      setShowManual(false)
+      setManualForm({ assetTarget: '', source: 'PENTEST', category: '', severity: 'HIGH', title: '', description: '', cve: '', responsible: '', remediationEndDate: '' })
+      queryClient.invalidateQueries({ queryKey: ['remediation', orgId] })
+    } catch (e: any) { setManualError(e.message) } finally { setManualSaving(false) }
+  }
+
+  async function handleImport(e: React.FormEvent) {
+    e.preventDefault()
+    if (!importFile) return
+    setImportLoading(true); setImportResult(null)
+    try {
+      const result = await importFindingsFromCsv(importFile, orgId)
+      setImportResult(result)
+      queryClient.invalidateQueries({ queryKey: ['remediation', orgId] })
+    } catch (e: any) { setImportResult({ imported: 0, errors: [{ row: 0, error: e.message }] }) }
+    finally { setImportLoading(false) }
+  }
+
   const { data: findings = [], isLoading } = useQuery({
     queryKey: ['remediation', orgId],
     queryFn: () => fetchRemediationFindings(orgId),
@@ -171,8 +206,110 @@ export default function RemediationView({ orgId = 'org_demo', readOnly = false }
 
   return (
     <div className="space-y-5">
+
+      {/* ── Manual finding modal ── */}
+      {showManual && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 overflow-y-auto py-8">
+          <form onSubmit={handleManualSubmit} className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-lg space-y-4 shadow-xl">
+            <h4 className="text-slate-200 font-semibold">Nuevo hallazgo manual</h4>
+            {manualError && <p className="text-rose-400 text-sm">{manualError}</p>}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="block text-xs text-slate-400 mb-1">Activo (IP o dominio) *</label>
+                <input required value={manualForm.assetTarget} onChange={e => setManualForm(f => ({...f, assetTarget: e.target.value}))} placeholder="192.168.1.1 o app.example.com"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500"/>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Fuente *</label>
+                <select required value={manualForm.source} onChange={e => setManualForm(f => ({...f, source: e.target.value}))}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200">
+                  <option value="PENTEST">Pentesting</option>
+                  <option value="COMPLIANCE">Cumplimiento normativo</option>
+                  <option value="BUG_BOUNTY">Bug Bounty</option>
+                  <option value="INTERNAL">Análisis interno</option>
+                  <option value="EXTERNAL_CLIENT">Cliente externo</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Severidad *</label>
+                <select required value={manualForm.severity} onChange={e => setManualForm(f => ({...f, severity: e.target.value}))}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200">
+                  {['CRITICAL','HIGH','MEDIUM','LOW','INFO'].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Categoría *</label>
+                <input required value={manualForm.category} onChange={e => setManualForm(f => ({...f, category: e.target.value}))} placeholder="Ej: Autenticación"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500"/>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">CVE (opcional)</label>
+                <input value={manualForm.cve} onChange={e => setManualForm(f => ({...f, cve: e.target.value}))} placeholder="CVE-2024-1234"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500"/>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs text-slate-400 mb-1">Título *</label>
+                <input required value={manualForm.title} onChange={e => setManualForm(f => ({...f, title: e.target.value}))} placeholder="Descripción breve del hallazgo"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500"/>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs text-slate-400 mb-1">Descripción</label>
+                <textarea rows={2} value={manualForm.description} onChange={e => setManualForm(f => ({...f, description: e.target.value}))} placeholder="Detalles técnicos..."
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 resize-none"/>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Responsable</label>
+                <input value={manualForm.responsible} onChange={e => setManualForm(f => ({...f, responsible: e.target.value}))} placeholder="Nombre o equipo"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500"/>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Fecha límite remediación</label>
+                <input type="date" value={manualForm.remediationEndDate} onChange={e => setManualForm(f => ({...f, remediationEndDate: e.target.value}))}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200"/>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button type="button" onClick={() => setShowManual(false)} className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200">Cancelar</button>
+              <button type="submit" disabled={manualSaving} className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white text-sm rounded-lg disabled:opacity-60">
+                {manualSaving ? 'Guardando...' : 'Crear hallazgo'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* ── CSV Import modal ── */}
+      {showImport && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <form onSubmit={handleImport} className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-md space-y-4 shadow-xl">
+            <h4 className="text-slate-200 font-semibold">Importar hallazgos desde CSV</h4>
+            <a href={getFindingsImportTemplateUrl()} download className="inline-flex items-center gap-1.5 text-sky-400 hover:text-sky-300 text-sm">
+              ⬇ Descargar plantilla CSV
+            </a>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1.5">Archivo CSV o Excel (máx. 5MB)</label>
+              <input type="file" accept=".csv,.xlsx,.xls" onChange={e => { setImportFile(e.target.files?.[0] ?? null); setImportResult(null) }}
+                className="text-sm text-slate-400 file:mr-3 file:px-3 file:py-1 file:rounded file:border-0 file:bg-slate-700 file:text-slate-300 file:text-xs cursor-pointer"/>
+            </div>
+            {importResult && (
+              <div className={`text-sm p-3 rounded-lg ${importResult.errors.length > 0 ? 'bg-amber-500/10 text-amber-300' : 'bg-emerald-500/10 text-emerald-300'}`}>
+                ✓ Importados: {importResult.imported}{importResult.errors.length > 0 && ` | Errores: ${importResult.errors.length}`}
+                {importResult.errors.map(e => <p key={e.row} className="text-xs mt-1">Fila {e.row}: {e.error}</p>)}
+              </div>
+            )}
+            <div className="flex gap-2 justify-end">
+              <button type="button" onClick={() => setShowImport(false)} className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200">Cerrar</button>
+              <button type="submit" disabled={!importFile || importLoading} className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white text-sm rounded-lg disabled:opacity-60">
+                {importLoading ? 'Importando...' : 'Importar'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {/* ── Sub-tab navigation ── */}
-      <div className="flex items-center gap-1 bg-slate-900 border border-slate-700 rounded-xl p-1 w-fit">
+      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex items-center gap-1 bg-slate-900 border border-slate-700 rounded-xl p-1">
         {([
           { id: 'plan',      label: 'Plan Activo',    icon: '⚑' },
           { id: 'registro',  label: 'Registro F-RI-25', icon: '📋' },
@@ -192,6 +329,21 @@ export default function RemediationView({ orgId = 'org_demo', readOnly = false }
           </button>
         ))}
       </div>
+
+      {/* Action buttons */}
+      {!readOnly && (
+        <div className="flex gap-2 ml-auto">
+          <button onClick={() => setShowImport(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 hover:text-slate-100 text-xs font-medium rounded-lg transition-colors">
+            ⬆ Importar CSV
+          </button>
+          <button onClick={() => setShowManual(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white text-xs font-medium rounded-lg transition-colors">
+            + Hallazgo manual
+          </button>
+        </div>
+      )}
+      </div>{/* end flex-wrap row */}
 
       {/* Historial & Registro rendered directly */}
       {subTab === 'historial' && <RemediationHistory />}
