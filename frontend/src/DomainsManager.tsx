@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { listDomains, createDomain, updateDomain, deleteDomain, fetchScanSessions, triggerDomainScan } from './api'
+import { listDomains, createDomain, updateDomain, deleteDomain, fetchScanSessions, triggerDomainScan, clearStaleScanJobs } from './api'
 import { onTelemetry } from './socket'
 
 // Validates hostname or IPv4 (with optional CIDR)
@@ -120,12 +120,22 @@ export default function DomainsManager({ orgId = 'org_demo' }: { orgId?: string 
   // cooldownMap: { [domainId]: timestamp when cooldown expires }
   const [cooldownMap, setCooldownMap] = useState<Record<string, number>>({})
   const [, forceRender] = useState(0)
+  const [globalLimitError, setGlobalLimitError] = useState(false)
   const [newDomain,  setNewDomain]  = useState('')
   const [newTools,   setNewTools]   = useState(PROFILE_DEFAULT_TOOLS.standard)
   const [newCron,    setNewCron]    = useState('0 2 * * 1')
   const [newProfile, setNewProfile] = useState<ScanProfile>('standard')
   const [settingsCard, setSettingsCard] = useState<string | null>(null)
   const [editCfg, setEditCfg] = useState<{ profile: ScanProfile; tools: string[] } | null>(null)
+
+  const clearStaleMut = useMutation({
+    mutationFn: clearStaleScanJobs,
+    onSuccess: () => {
+      setGlobalLimitError(false)
+      qc.invalidateQueries({ queryKey: ['domains'] })
+      qc.invalidateQueries({ queryKey: ['scan-sessions'] })
+    },
+  })
 
   const { data: domains = [], isLoading } = useQuery({
     queryKey: ['domains', orgId],
@@ -189,6 +199,11 @@ export default function DomainsManager({ orgId = 'org_demo' }: { orgId?: string 
         })()
       if (remainingMs && remainingMs > 0) {
         setCooldownMap(prev => ({ ...prev, [domainId]: Date.now() + remainingMs }))
+      }
+      // Detectar error de límite global de scans concurrentes
+      const msg: string = err?.message ?? ''
+      if (msg.includes('Límite') || msg.includes('L\u00edmite')) {
+        setGlobalLimitError(true)
       }
     },
   })
@@ -293,6 +308,23 @@ export default function DomainsManager({ orgId = 'org_demo' }: { orgId?: string 
 
   return (
     <div className="space-y-5">
+      {/* Banner: límite de scans concurrentes alcanzado */}
+      {globalLimitError && (
+        <div className="flex items-center gap-3 bg-amber-900/30 border border-amber-700/50 rounded-xl px-4 py-3">
+          <span className="text-amber-400 text-sm flex-1">
+            ⚠ Hay scans atascados bloqueando nuevos escaneos. Puedes limpiarlos para continuar.
+          </span>
+          <button
+            onClick={() => clearStaleMut.mutate()}
+            disabled={clearStaleMut.isPending}
+            className="text-xs px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-medium disabled:opacity-50 transition-colors shrink-0"
+          >
+            {clearStaleMut.isPending ? 'Limpiando…' : '🧹 Limpiar scans atascados'}
+          </button>
+          <button onClick={() => setGlobalLimitError(false)} className="text-slate-400 hover:text-slate-200 text-lg leading-none">×</button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

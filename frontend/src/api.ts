@@ -199,9 +199,18 @@ export async function markDomainScanned(id: string) {
 export async function triggerDomainScan(domainId: string): Promise<{ scanId: string; status: string; domain: string }> {
   const res = await apiFetch(`${API}/api/v1/domains/${domainId}/scan`, { method: 'POST' })
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error((err as any).message || 'Failed to trigger scan')
+    const body = await res.json().catch(() => ({}))
+    const err: any = new Error((body as any).message || 'Failed to trigger scan')
+    // Propagar remainingMs para el countdown en vivo
+    if ((body as any).remainingMs) err.remainingMs = (body as any).remainingMs
+    throw err
   }
+  return res.json()
+}
+
+export async function clearStaleScanJobs(): Promise<{ cleared: number }> {
+  const res = await apiFetch(`${API}/api/v1/domains/scan-jobs/stale`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Failed to clear stale scans')
   return res.json()
 }
 

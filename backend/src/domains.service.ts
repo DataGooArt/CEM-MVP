@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, InternalServerErrorException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, InternalServerErrorException, ConflictException, OnModuleInit, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PrismaService } from './prisma.service';
 
@@ -19,8 +19,31 @@ function computeNextScan(cronExpr: string): Date {
 }
 
 @Injectable()
-export class DomainsService {
+export class DomainsService implements OnModuleInit {
+  private readonly logger = new Logger(DomainsService.name);
   constructor(private readonly prisma: PrismaService) {}
+
+  /** Al arrancar, marca como FAILED los scan jobs atascados (>5 min en RUNNING/PENDING).
+   *  Esto evita que reinicios del contenedor bloqueen nuevos scans indefinidamente. */
+  async onModuleInit() {
+    const staleThreshold = new Date(Date.now() - 5 * 60 * 1000); // 5 minutos
+    const result = await this.prisma.scanJob.updateMany({
+      where: { status: { in: ['RUNNING', 'PENDING'] }, startedAt: { lt: staleThreshold } },
+      data: { status: 'FAILED' },
+    });
+    if (result.count > 0)
+      this.logger.warn(`Startup cleanup: ${result.count} scan job(s) atascado(s) → FAILED`);
+  }
+
+  /** Limpia TODOS los scan jobs RUNNING/PENDING → FAILED. Uso: emergencia desde UI. */
+  async clearStaleScans(): Promise<{ cleared: number }> {
+    const result = await this.prisma.scanJob.updateMany({
+      where: { status: { in: ['RUNNING', 'PENDING'] } },
+      data: { status: 'FAILED' },
+    });
+    this.logger.warn(`clearStaleScans: ${result.count} job(s) limpiado(s) manualmente`);
+    return { cleared: result.count };
+  }
 
   list(orgId = 'org_demo') {
     return this.prisma.monitoredDomain.findMany({

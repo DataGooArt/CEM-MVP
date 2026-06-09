@@ -71,6 +71,11 @@ export class DomainsController {
     return this.svc.update(id, dto);
   }
 
+  @Delete('scan-jobs/stale')
+  clearStaleScans() {
+    return this.svc.clearStaleScans();
+  }
+
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.svc.remove(id);
