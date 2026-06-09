@@ -16,6 +16,7 @@ import yaml
 import requests
 from pathlib import Path
 from threading import Thread
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from plugins.base import BasePlugin
 
 logging.basicConfig(
@@ -125,8 +126,8 @@ class ApiClient:
 
     def health_check(self) -> bool:
         try:
-            resp = self.session.get(f"{self.base_url}/api/v1/findings?organizationId=org_demo", timeout=5)
-            return resp.status_code == 200
+            resp = self.session.get(f"{self.base_url}/api/v1/collectors/health", timeout=5)
+            return resp.status_code in (200, 401, 404)  # any HTTP response means the API is up
         except requests.RequestException:
             return False
 
@@ -134,6 +135,12 @@ class ApiClient:
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
+
+# These tools consume katana's URL pipeline output (/tmp/katana_urls_*.txt)
+# and must run in a second wave, after all wave-1 tools (including katana) finish.
+_WAVE2_TOOLS = frozenset({"dalfox", "sqlmap"})
+
+
 class CollectorRunner:
     def __init__(self, config: dict, scan_id: str = None, profile: str = "standard"):
         self.config = config
@@ -146,56 +153,74 @@ class CollectorRunner:
         )
         self.plugins = discover_plugins()
 
+    def _run_plugin(self, plugin_name: str, plugin_cls: type, target: dict, plugin_config: dict) -> list[dict]:
+        """Execute one plugin in a thread. Returns deduplicated, noise-filtered findings.
+        Does NOT call api.ingest (main thread handles ingestion to avoid session races)."""
+        host = target["host"]
+        plugin = plugin_cls()
+        log.info(f"[{host}] Starting plugin: {plugin_name}")
+        self.api.report_progress("tool:started", tool=plugin_name)
+        try:
+            findings = plugin.run(target, plugin_config)
+            findings = self._filter_noise(findings, plugin_name)
+            seen: dict = {}
+            for f in findings:
+                key = (f.get("title", ""), f.get("source_tool", plugin_name))
+                if key not in seen:
+                    seen[key] = f
+            findings = list(seen.values())
+            log.info(f"[{host}] {plugin_name}: {len(findings)} findings")
+            self.api.report_progress("tool:done", tool=plugin_name, count=len(findings))
+            return findings
+        except Exception as e:
+            log.error(f"[{host}] Plugin {plugin_name} failed: {e}", exc_info=True)
+            self.api.report_progress("tool:error", tool=plugin_name)
+            return []
+
     def run_target(self, target: dict):
         host = target["host"]
         log.info(f"=== Scanning target: {host} (profile: {self.profile}) ===")
         total_sent = 0
-        delay = self.config.get("collector", {}).get("delay_between_tools", 3)
-
         self.api.report_progress("scan:started")
 
+        # Partition enabled plugins into two waves:
+        # Wave 1 — all independent tools, run fully in parallel
+        # Wave 2 — dalfox & sqlmap (depend on katana URL output), run after wave 1
+        wave1: dict[str, tuple] = {}
+        wave2: dict[str, tuple] = {}
         for plugin_name, plugin_config in self.config.get("plugins", {}).items():
             if not plugin_config.get("enabled", False):
                 log.debug(f"Plugin {plugin_name} disabled, skipping")
                 continue
-
             if plugin_name not in self.plugins:
                 log.warning(f"Plugin '{plugin_name}' not found in registry")
                 continue
+            bucket = wave2 if plugin_name in _WAVE2_TOOLS else wave1
+            bucket[plugin_name] = (self.plugins[plugin_name], plugin_config)
 
-            plugin_cls = self.plugins[plugin_name]
-            plugin = plugin_cls()
-            log.info(f"Running plugin: {plugin_name} against {host}")
-            self.api.report_progress("tool:started", tool=plugin_name)
+        log.info(f"[{host}] Wave 1 ({len(wave1)} tools, parallel): {list(wave1.keys())}")
+        if wave2:
+            log.info(f"[{host}] Wave 2 ({len(wave2)} tools, after wave 1): {list(wave2.keys())}")
 
-            try:
-                findings = plugin.run(target, plugin_config)
-                findings = self._filter_noise(findings, plugin_name)
-                # Deduplicate by (title, source_tool) within this plugin's output
-                seen: dict = {}
-                for f in findings:
-                    key = (f.get('title', ''), f.get('source_tool', plugin_name))
-                    if key not in seen:
-                        seen[key] = f
-                findings = list(seen.values())
-                count = len(findings)
-                log.info(f"{plugin_name}: found {count} findings (after noise filter)")
+        def _run_wave(wave: dict) -> int:
+            """Submit all plugins in a ThreadPoolExecutor; ingest findings from the main thread."""
+            if not wave:
+                return 0
+            sent = 0
+            with ThreadPoolExecutor(max_workers=min(len(wave), 8), thread_name_prefix="cem-plugin") as ex:
+                future_to_name = {
+                    ex.submit(self._run_plugin, name, cls, target, cfg): name
+                    for name, (cls, cfg) in wave.items()
+                }
+                for future in as_completed(future_to_name):
+                    for finding in future.result():
+                        if self.api.ingest(finding):
+                            sent += 1
+                        time.sleep(0.05)  # rate-limit per finding (main thread only)
+            return sent
 
-                for finding in findings:
-                    if self.api.ingest(finding):
-                        total_sent += 1
-                    time.sleep(0.05)  # rate-limit per finding
-
-                self.api.report_progress("tool:done", tool=plugin_name, count=count)
-
-            except Exception as e:
-                log.error(f"Plugin {plugin_name} failed on {host}: {e}", exc_info=True)
-                self.api.report_progress("tool:error", tool=plugin_name)
-
-            # Anti-flood: pause between tools to not saturate the target
-            if delay > 0:
-                log.debug(f"Waiting {delay}s before next tool...")
-                time.sleep(delay)
+        total_sent += _run_wave(wave1)
+        total_sent += _run_wave(wave2)
 
         self.api.report_progress("scan:done", count=total_sent)
         log.info(f"Target {host} complete. Sent {total_sent} findings.")
@@ -278,7 +303,7 @@ def run_server(config: dict, host: str = "0.0.0.0", port: int = 5000):
         req_config = {
             **config,
             "api": {**config.get("api", {}), "url": api_url, "collector_id": target},
-            "targets": [{"id": "scan-target", "host": target, "tags": ["ui-triggered"]}],
+            "targets": [{"id": "scan-target", "host": target, "tags": ["ui-triggered"], "scan_id": scan_id}],
         }
 
         # Build plugin section from profile

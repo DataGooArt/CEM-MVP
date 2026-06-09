@@ -38,6 +38,8 @@ class NucleiPlugin(BasePlugin):
         tags_arg = ",".join(templates)
         sev_arg = ",".join(severity_filter)
 
+        scan_id_short = target.get("scan_id", "tmp")[:12].replace("-", "")
+        out_file = f"/tmp/nuclei_{scan_id_short}.json"
         rate_limit = config.get("rate_limit", 100)
         cmd = [
             "nuclei",
@@ -45,13 +47,15 @@ class NucleiPlugin(BasePlugin):
             "-tags", tags_arg,
             "-severity", sev_arg,
             "-rate-limit", str(rate_limit),
-            "-json-export", "/tmp/nuclei_out.json",
+            "-timeout", "5",
+            "-json-export", out_file,
             "-silent",
             "-no-color",
         ]
 
+        timeout = config.get("timeout", 300)
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         except subprocess.TimeoutExpired:
             log.warning(f"nuclei timed out against {host}")
             return []
@@ -60,7 +64,7 @@ class NucleiPlugin(BasePlugin):
             return []
 
         try:
-            with open("/tmp/nuclei_out.json") as f:
+            with open(out_file) as f:
                 for line in f:
                     line = line.strip()
                     if not line:
