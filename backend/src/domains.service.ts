@@ -126,13 +126,14 @@ export class DomainsService implements OnModuleInit {
     }
 
     // Cooldown: evitar re-scan del mismo dominio en menos de SCAN_COOLDOWN_SECONDS
+    // Solo aplica a scans activos (RUNNING/PENDING) o exitosos (COMPLETED). FAILED permite reintento inmediato.
     const COOLDOWN_MS = (parseInt(process.env.SCAN_COOLDOWN_SECONDS ?? '60', 10) || 60) * 1000;
     const recentScan = await this.prisma.scanJob.findFirst({
       where: {
         orgId: 'org_demo',
         domain: domain.domain,
         startedAt: { gte: new Date(Date.now() - COOLDOWN_MS) },
-        status: { not: 'CANCELLED' },
+        status: { in: ['RUNNING', 'PENDING', 'COMPLETED'] },
       },
       orderBy: { startedAt: 'desc' },
     });
