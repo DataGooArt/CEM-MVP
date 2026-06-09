@@ -117,6 +117,9 @@ export default function DomainsManager({ orgId = 'org_demo' }: { orgId?: string 
   const [showCmd, setShowCmd]     = useState<string | null>(null)
   const [scanStates, setScanStates] = useState<Record<string, ScanState>>({})
   const scanToDomain = useRef<Record<string, string>>({})
+  // cooldownMap: { [domainId]: timestamp when cooldown expires }
+  const [cooldownMap, setCooldownMap] = useState<Record<string, number>>({})
+  const [, forceRender] = useState(0)
   const [newDomain,  setNewDomain]  = useState('')
   const [newTools,   setNewTools]   = useState(PROFILE_DEFAULT_TOOLS.standard)
   const [newCron,    setNewCron]    = useState('0 2 * * 1')
@@ -166,16 +169,47 @@ export default function DomainsManager({ orgId = 'org_demo' }: { orgId?: string 
         ...prev,
         [domainId]: { scanId: result.scanId, status: 'running', toolsDone: [], totalFindings: 0 },
       }))
+      // Limpiar cooldown si había uno activo
+      setCooldownMap(prev => { const n = { ...prev }; delete n[domainId]; return n })
     },
-    onError: (_err, { domainId }) => {
+    onError: (err: any, { domainId }) => {
       // Limpiar estado de scan fallido para que el botón vuelva a estar activo
       setScanStates(prev => {
         const next = { ...prev }
         if (next[domainId]?.status === 'running') delete next[domainId]
         return next
       })
+      // Parsear remainingMs del error estructurado o del mensaje de texto
+      const remainingMs: number | null =
+        err?.remainingMs ??
+        (() => {
+          const msg: string = err?.message ?? ''
+          const m = msg.match(/Espera (\d+)s m/)
+          return m ? parseInt(m[1], 10) * 1000 : null
+        })()
+      if (remainingMs && remainingMs > 0) {
+        setCooldownMap(prev => ({ ...prev, [domainId]: Date.now() + remainingMs }))
+      }
     },
   })
+
+  // Tick cada segundo para actualizar contadores de cooldown
+  useEffect(() => {
+    if (Object.keys(cooldownMap).length === 0) return
+    const timer = setInterval(() => {
+      const now = Date.now()
+      setCooldownMap(prev => {
+        const next = { ...prev }
+        let changed = false
+        for (const id of Object.keys(next)) {
+          if (next[id] <= now) { delete next[id]; changed = true }
+        }
+        return changed ? next : prev
+      })
+      forceRender(n => n + 1)
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [cooldownMap])
 
   useEffect(() => {
     const unsub = onTelemetry((event: any) => {
@@ -444,30 +478,53 @@ export default function DomainsManager({ orgId = 'org_demo' }: { orgId?: string 
                   >
                     ⚙️ Config
                   </button>
-                  <button
-                    onClick={() => !isScanning && !isScanPending && scanMut.mutate({ domainId: d.id })}
-                    disabled={isScanning || isScanPending}
-                    className={`text-xs px-2.5 py-1 rounded border transition-colors ${
-                      isScanDone
-                        ? 'bg-emerald-900/30 border-emerald-700/40 text-emerald-400'
-                        : (isScanning || isScanPending)
-                        ? 'bg-violet-900/40 border-violet-700/40 text-violet-300 animate-pulse cursor-not-allowed'
-                        : 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600'
-                    }`}
-                  >
-                    {isScanDone ? '✓ Completado' : (isScanning || isScanPending) ? `Escaneando${scanState?.currentTool ? ` ${scanState.currentTool}` : ''}…` : '▶ Escanear'}
-                  </button>                  {/* Error 409: límite global o cooldown por dominio */}
-                  {scanMut.isError && scanMut.variables?.domainId === d.id && (
-                    <span className="text-xs text-rose-400 border border-rose-700/40 bg-rose-900/20 rounded px-2 py-0.5 max-w-xs truncate" title={(scanMut.error as Error)?.message}>
-                      {(() => {
-                        const msg = (scanMut.error as Error)?.message ?? ''
-                        const cooldown = msg.match(/Espera (\d+)s más/)
-                        if (cooldown) return `⏱ Cooldown: ${cooldown[1]}s restantes`
-                        if (msg.includes('Límite') || msg.includes('L\u00edmite')) return '⚠ Límite de scans alcanzado'
-                        return '⚠ Error al iniciar scan'
-                      })()}
-                    </span>
-                  )}                  <button
+                  {(() => {
+                    const cooldownExpiry = cooldownMap[d.id]
+                    const cooldownRemaining = cooldownExpiry ? Math.ceil((cooldownExpiry - Date.now()) / 1000) : 0
+                    const inCooldown = cooldownRemaining > 0
+                    const isDisabled = isScanning || isScanPending || inCooldown
+                    const totalCooldown = 60 // segundos, refleja SCAN_COOLDOWN_SECONDS del backend
+                    const cooldownPct = inCooldown ? Math.round((cooldownRemaining / totalCooldown) * 100) : 0
+                    return (
+                      <div className="flex flex-col gap-0.5">
+                        <button
+                          onClick={() => !isDisabled && scanMut.mutate({ domainId: d.id })}
+                          disabled={isDisabled}
+                          className={`text-xs px-2.5 py-1 rounded border transition-colors ${
+                            isScanDone
+                              ? 'bg-emerald-900/30 border-emerald-700/40 text-emerald-400'
+                              : (isScanning || isScanPending)
+                              ? 'bg-violet-900/40 border-violet-700/40 text-violet-300 animate-pulse cursor-not-allowed'
+                              : inCooldown
+                              ? 'bg-amber-900/30 border-amber-700/40 text-amber-400 cursor-not-allowed'
+                              : 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600'
+                          }`}
+                        >
+                          {isScanDone
+                            ? '✓ Completado'
+                            : (isScanning || isScanPending)
+                            ? `Escaneando${scanState?.currentTool ? ` ${scanState.currentTool}` : ''}…`
+                            : inCooldown
+                            ? `⏱ ${cooldownRemaining}s`
+                            : '▶ Escanear'}
+                        </button>
+                        {inCooldown && (
+                          <div className="w-full h-0.5 bg-slate-700 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-amber-500/60 transition-all duration-1000"
+                              style={{ width: `${cooldownPct}%` }}
+                            />
+                          </div>
+                        )}
+                        {scanMut.isError && scanMut.variables?.domainId === d.id && !inCooldown && (() => {
+                          const msg = (scanMut.error as any)?.message ?? ''
+                          if (msg.includes('Límite') || msg.includes('L\u00edmite'))
+                            return <span className="text-[10px] text-rose-400">⚠ Límite alcanzado</span>
+                          return <span className="text-[10px] text-rose-400">⚠ Error al iniciar</span>
+                        })()}
+                      </div>
+                    )
+                  })()}                  <button
                     onClick={() => { if (confirm(`¿Eliminar ${d.domain}?`)) deleteMut.mutate(d.id) }}
                     className="text-xs px-2.5 py-1 rounded bg-rose-900/30 border border-rose-700/40 text-rose-400 hover:bg-rose-900/50 transition-colors"
                   >

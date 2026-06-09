@@ -125,6 +125,9 @@ export default function RemediationView({ orgId = 'org_demo', readOnly = false }
       setShowManual(false)
       setManualForm({ assetTarget: '', source: 'PENTEST', category: '', severity: 'HIGH', title: '', description: '', cve: '', responsible: '', remediationEndDate: '' })
       queryClient.invalidateQueries({ queryKey: ['remediation', orgId] })
+      queryClient.invalidateQueries({ queryKey: ['stats', orgId] })
+      queryClient.invalidateQueries({ queryKey: ['findings', orgId] })
+      queryClient.invalidateQueries({ queryKey: ['severity', orgId] })
     } catch (e: any) { setManualError(e.message) } finally { setManualSaving(false) }
   }
 
@@ -136,6 +139,9 @@ export default function RemediationView({ orgId = 'org_demo', readOnly = false }
       const result = await importFindingsFromCsv(importFile, orgId)
       setImportResult(result)
       queryClient.invalidateQueries({ queryKey: ['remediation', orgId] })
+      queryClient.invalidateQueries({ queryKey: ['stats', orgId] })
+      queryClient.invalidateQueries({ queryKey: ['findings', orgId] })
+      queryClient.invalidateQueries({ queryKey: ['severity', orgId] })
     } catch (e: any) { setImportResult({ imported: 0, errors: [{ row: 0, error: e.message }] }) }
     finally { setImportLoading(false) }
   }

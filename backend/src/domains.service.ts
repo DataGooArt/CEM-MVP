@@ -83,7 +83,9 @@ export class DomainsService {
   }
 
   /** Número máximo de scans RUNNING/PENDING simultáneos permitidos. */
-  private readonly MAX_CONCURRENT_SCANS = 3;
+  private get MAX_CONCURRENT_SCANS(): number {
+    return parseInt(process.env.MAX_CONCURRENT_SCANS ?? '3', 10) || 3;
+  }
 
   async triggerScan(domainId: string): Promise<{ scanId: string; status: string; domain: string }> {
     const domain = await this.prisma.monitoredDomain.findUnique({ where: { id: domainId } });
@@ -100,8 +102,8 @@ export class DomainsService {
       );
     }
 
-    // Cooldown: evitar re-scan del mismo dominio en menos de 60 segundos
-    const COOLDOWN_MS = 60_000;
+    // Cooldown: evitar re-scan del mismo dominio en menos de SCAN_COOLDOWN_SECONDS
+    const COOLDOWN_MS = (parseInt(process.env.SCAN_COOLDOWN_SECONDS ?? '60', 10) || 60) * 1000;
     const recentScan = await this.prisma.scanJob.findFirst({
       where: {
         orgId: 'org_demo',
@@ -112,12 +114,17 @@ export class DomainsService {
       orderBy: { startedAt: 'desc' },
     });
     if (recentScan) {
-      const elapsed = Math.round((Date.now() - recentScan.startedAt.getTime()) / 1000);
-      const remaining = Math.ceil((COOLDOWN_MS - (Date.now() - recentScan.startedAt.getTime())) / 1000);
-      throw new ConflictException(
-        `El dominio ${domain.domain} fue escaneado hace ${elapsed}s. ` +
-        `Espera ${remaining}s más antes de lanzar otro scan.`,
-      );
+      const elapsedMs = Date.now() - recentScan.startedAt.getTime();
+      const remainingMs = Math.max(0, COOLDOWN_MS - elapsedMs);
+      const elapsed = Math.round(elapsedMs / 1000);
+      const remaining = Math.ceil(remainingMs / 1000);
+      throw new ConflictException({
+        error: 'COOLDOWN',
+        remainingMs,
+        elapsedMs,
+        domain: domain.domain,
+        message: `El dominio ${domain.domain} fue escaneado hace ${elapsed}s. Espera ${remaining}s más antes de lanzar otro scan.`,
+      });
     }
 
     const scanId = randomUUID();
