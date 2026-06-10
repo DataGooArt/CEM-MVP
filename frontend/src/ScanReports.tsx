@@ -250,6 +250,7 @@ function InlineReportPanel({ summary, onClose }: { summary: ScanReportSummary; o
   const generate = useMutation({
     mutationFn: () => generateReport(summary.scanId, true),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['report', summary.scanId] }); qc.invalidateQueries({ queryKey: ['scan-reports'] }) },
+    onError: () => {},
   })
 
   const exportJson = () => {
@@ -458,7 +459,12 @@ function TechnicalReportsList() {
   const qc = useQueryClient()
   const { data: reports = [], isLoading: reportsLoading } = useQuery({ queryKey: ['scan-reports', ORG], queryFn: () => fetchReports(ORG), refetchInterval: 20_000 })
   const { data: jobs = [], isLoading: jobsLoading } = useQuery({ queryKey: ['scan-jobs', ORG], queryFn: () => fetchJobs(ORG), refetchInterval: 15_000 })
-  const genMut = useMutation({ mutationFn: (scanId: string) => generateReport(scanId, true), onSuccess: () => qc.invalidateQueries({ queryKey: ['scan-reports', ORG] }) })
+  const genMut = useMutation({
+    mutationFn: (scanId: string) => generateReport(scanId, true),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['scan-reports', ORG] }),
+    onError: () => {},
+  })
+  const [generatingScanId, setGeneratingScanId] = useState<string | null>(null)
   const cancelMut = useMutation({ mutationFn: (scanId: string) => cancelScan(scanId), onSuccess: () => qc.invalidateQueries({ queryKey: ['scan-jobs', ORG] }) })
   const cancelAllMut = useMutation({ mutationFn: () => cancelAllStaleScans(ORG), onSuccess: () => qc.invalidateQueries({ queryKey: ['scan-jobs', ORG] }) })
   const isLoading = reportsLoading || jobsLoading
@@ -527,9 +533,11 @@ function TechnicalReportsList() {
                   </div>
                   <div className="flex flex-wrap gap-1 mt-1.5">{j.tools.map(t => <span key={t} className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded border border-slate-700">{t}</span>)}</div>
                 </div>
-                <button onClick={() => genMut.mutate(j.scanId)} disabled={genMut.isPending}
+                <button
+                  onClick={() => { setGeneratingScanId(j.scanId); genMut.mutate(j.scanId, { onSettled: () => setGeneratingScanId(null) }) }}
+                  disabled={generatingScanId === j.scanId}
                   className="text-xs px-3 py-1.5 rounded border border-amber-600/40 text-amber-400 bg-amber-900/20 hover:bg-amber-900/40 disabled:opacity-40 transition-colors">
-                  {genMut.isPending ? 'Generando…' : 'Generar informe'}
+                  {generatingScanId === j.scanId ? 'Generando…' : 'Generar informe'}
                 </button>
               </div>
             </div>

@@ -16,6 +16,9 @@ services:
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
       - COLLECTOR_URL=${COLLECTOR_URL:-http://collector:5000}
       - API_INTERNAL_URL=${API_INTERNAL_URL:-http://api:3001}
+      - JWT_SECRET=${JWT_SECRET:-cem-jwt-secret-change-in-production}
+    volumes:
+      - uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -87,10 +90,15 @@ services:
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
       - GEMINI_REPORT_MODEL=${GEMINI_REPORT_MODEL:-gemini-2.0-flash}
+      - JWT_SECRET=${JWT_SECRET:-cem-jwt-secret-change-in-production}
+      - SCAN_COOLDOWN_SECONDS=${SCAN_COOLDOWN_SECONDS:-60}
+      - MAX_CONCURRENT_SCANS=${MAX_CONCURRENT_SCANS:-3}
       - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
       - SMTP_PORT=${SMTP_PORT:-587}
       - SMTP_USER=${SMTP_USER:-}
       - SMTP_PASS=${SMTP_PASS:-}
+    volumes:
+      - uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -135,6 +143,7 @@ volumes:
   pgdata:
   redisdata:
   ollamadata:
+  uploads:
 
 networks:
   cem:

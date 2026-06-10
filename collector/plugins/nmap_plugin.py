@@ -64,8 +64,9 @@ class NmapPlugin(BasePlugin):
         findings = []
 
         cmd = ["nmap"] + args.split() + ["-oX", "-", host]
+        timeout = config.get("timeout", 300)
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         except subprocess.TimeoutExpired:
             log.warning(f"nmap timed out against {host}")
             return []

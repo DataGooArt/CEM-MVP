@@ -21,7 +21,8 @@ perfiles:
       trufflehog:  false
       amass:       false
     nmap:
-      args: "-sS -F --open -T4 --max-retries 1"
+      args: "-sS -F --open -T4 --max-retries 1 --host-timeout 30s --max-rtt-timeout 500ms"
+      timeout: 120
     nuclei:
       severity: [critical, high]
       rate_limit: 150
@@ -81,7 +82,8 @@ perfiles:
       trufflehog:  true
       amass:       false
     nmap:
-      args: "-sV --script vuln,auth,banner,http-headers,ssl-cert,ssl-enum-ciphers -T4 --open"
+      args: "-sV --script vuln,auth,banner,http-headers,ssl-cert,ssl-enum-ciphers -T4 --open --host-timeout 90s --max-rtt-timeout 1000ms"
+      timeout: 300
     nuclei:
       severity: [critical, high, medium]
       rate_limit: 100
@@ -131,7 +133,7 @@ perfiles:
       gobuster:    true
       nikto:       true
       sslscan:     true
-      ffuf:        true
+      ffuf:        false  # plugin not implemented yet
       subfinder:   true
       httpx:       true
       testssl:     true
@@ -142,7 +144,8 @@ perfiles:
       amass:       true
     nmap:
       # -p- with -T2 can take hours; --top-ports 1000 covers 99% of real services
-      args: "-sV -sC -O --top-ports 1000 -T3 --open --script vuln,banner,default"
+      args: "-sV -sC -O --top-ports 1000 -T3 --open --script vuln,banner,default --host-timeout 180s"
+      timeout: 600
     nuclei:
       severity: [critical, high, medium, low, info]
       rate_limit: 50
@@ -186,7 +189,7 @@ perfiles:
 collector:
   wordlists_path: "/app/wordlists"
   fallback_wordlist: "/usr/share/wordlists/dirb/common.txt"
-  delay_between_tools: 3   # segundos entre tools para no saturar el target
+  delay_between_tools: 0   # tools run in parallel — per-finding rate-limit handles anti-flood
   max_concurrent_domains: 3
 
 # ─── API backend ──────────────────────────────────────────────────────────────

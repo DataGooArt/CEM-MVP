@@ -71,12 +71,14 @@ class NiktoPlugin(BasePlugin):
         # subprocess timeout must be nikto's -maxtime + 60 s so nikto can finish
         # writing the JSON output file before the process gets killed.
         proc_timeout = config.get("timeout", 360)
+        scan_id_short = target.get("scan_id", "tmp")[:12].replace("-", "")
         findings = []
 
         # Run against both HTTP and HTTPS
         # Call nikto.pl directly via perl; cwd must be /opt/nikto/program so FindBin resolves plugins correctly
         for scheme in ("https", "http"):
-            cmd = ["perl", "/opt/nikto/program/nikto.pl", "-host", f"{scheme}://{host}", "-Format", "json", "-output", f"/tmp/nikto_{scheme}.json"] + args.split()
+            out_file = f"/tmp/nikto_{scheme}_{scan_id_short}.json"
+            cmd = ["perl", "/opt/nikto/program/nikto.pl", "-host", f"{scheme}://{host}", "-Format", "json", "-output", out_file] + args.split()
             try:
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=proc_timeout, cwd="/opt/nikto/program")
             except subprocess.TimeoutExpired:
@@ -90,7 +92,7 @@ class NiktoPlugin(BasePlugin):
                 log.warning(f"nikto exited {result.returncode} for {scheme}://{host}: {result.stderr[:200]!r}")
 
             try:
-                with open(f"/tmp/nikto_{scheme}.json") as f:
+                with open(out_file) as f:
                     import json
                     raw = json.load(f)
 

@@ -75,29 +75,57 @@ export class NormalizationWorker {
     }
 
     // ─── Deduplication check ────────────────────────────────────────────────
+    // Search across ALL non-archived findings (open OR previously closed/fixed)
     const existingFinding = await this.prisma.finding.findFirst({
       where: {
         assetId:     asset.id,
         contentHash,
-        status:      { in: ['OPEN', 'IN_PROGRESS'] },
+        archivedAt:  null,
       },
-      select: { id: true, seenCount: true },
+      select: { id: true, seenCount: true, status: true, recurrenceCount: true },
     });
 
     if (existingFinding) {
-      // Duplicate: bump counter, re-confirm in current scan (if provided)
-      await this.prisma.finding.update({
-        where: { id: existingFinding.id },
-        data: {
-          seenCount:  { increment: 1 },
-          lastSeenAt: new Date(),
-          ...(data.scanId ? { scanId: data.scanId } : {}),
-        },
-      });
-      this.logger.debug(
-        `Duplicate skipped — hash=${contentHash} seenCount=${existingFinding.seenCount + 1} findingId=${existingFinding.id}`,
-      );
-      return; // ← do NOT create a new finding or enqueue AI analysis
+      const isActive = ['OPEN', 'IN_PROGRESS'].includes(existingFinding.status);
+
+      if (isActive) {
+        // Still open — just bump the seen counter
+        await this.prisma.finding.update({
+          where: { id: existingFinding.id },
+          data: {
+            seenCount:  { increment: 1 },
+            lastSeenAt: new Date(),
+            ...(data.scanId ? { scanId: data.scanId } : {}),
+          },
+        });
+        this.logger.debug(
+          `Duplicate skipped (still open) — hash=${contentHash} seenCount=${existingFinding.seenCount + 1} findingId=${existingFinding.id}`,
+        );
+        return; // ← do NOT create a new finding or enqueue AI analysis
+      } else {
+        // Previously closed/fixed — re-open and flag as recurrent
+        await this.prisma.finding.update({
+          where: { id: existingFinding.id },
+          data: {
+            status:          'OPEN',
+            seenCount:       { increment: 1 },
+            recurrenceCount: { increment: 1 },
+            lastSeenAt:      new Date(),
+            resolvedAt:      null,
+            ...(data.scanId ? { scanId: data.scanId } : {}),
+          },
+        });
+        this.logger.warn(
+          `Recurrent finding re-opened — hash=${contentHash} recurrenceCount=${existingFinding.recurrenceCount + 1} findingId=${existingFinding.id}`,
+        );
+        // Re-enqueue AI analysis so correlations and risk are refreshed
+        await this.aiQueue.add('analyze', { findingId: existingFinding.id }, {
+          attempts: 2,
+          backoff: { type: 'fixed', delay: 5000 },
+          removeOnComplete: 100,
+        });
+        return; // ← do NOT create a new finding record
+      }
     }
 
     const finding = await this.prisma.finding.create({

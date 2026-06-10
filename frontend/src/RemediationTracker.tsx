@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { fetchRemediationFindings, updateFindingTracking } from './api'
+import { fetchRemediationFindings, updateFindingTracking, uploadFindingEvidence } from './api'
 import DateRangeFilter, { DateRange, defaultRange } from './DateRangeFilter'
 
 const ORG = 'org_demo'
@@ -128,6 +128,19 @@ export default function RemediationTracker({ readOnly = false }: { readOnly?: bo
       closeEdit()
     } finally { setSaving(false) }
   }, [editing, editState, qc])
+
+  // ── Evidence file upload ──
+  const [evidenceUploadingId, setEvidenceUploadingId] = useState<string | null>(null)
+  const [evidenceError, setEvidenceError] = useState('')
+
+  async function handleEvidenceUpload(findingId: string, file: File) {
+    setEvidenceUploadingId(findingId); setEvidenceError('')
+    try {
+      await uploadFindingEvidence(findingId, file)
+      qc.invalidateQueries({ queryKey: ['remediation', ORG] })
+    } catch (e: any) { setEvidenceError(e.message) }
+    finally { setEvidenceUploadingId(null) }
+  }
 
   function setField(k: keyof EditState, v: string) {
     setEditState(s => s ? { ...s, [k]: v } : s)
@@ -280,16 +293,47 @@ export default function RemediationTracker({ readOnly = false }: { readOnly?: bo
                     </td>
 
                     {/* Soporte */}
-                    <td className="px-3 py-2 min-w-[140px]">
+                    <td className="px-3 py-2 min-w-[160px]">
                       {isEditRow ? (
-                        <input value={editState.remediationEvidence}
-                          onChange={e => setField('remediationEvidence', e.target.value)}
-                          placeholder="URL, ticket, doc…"
-                          className="bg-slate-800 border border-slate-600 text-slate-200 text-[10px] rounded px-1.5 py-0.5 w-full focus:outline-none focus:ring-1 focus:ring-sky-500" />
+                        <div className="space-y-1">
+                          <input value={editState.remediationEvidence}
+                            onChange={e => setField('remediationEvidence', e.target.value)}
+                            placeholder="URL, ticket, doc…"
+                            className="bg-slate-800 border border-slate-600 text-slate-200 text-[10px] rounded px-1.5 py-0.5 w-full focus:outline-none focus:ring-1 focus:ring-sky-500" />
+                          <label className="flex items-center gap-1 cursor-pointer text-sky-400 hover:text-sky-300 text-[10px]">
+                            <span>{evidenceUploadingId === f.id ? '⏳' : '📎'} Adjuntar archivo</span>
+                            <input type="file" className="hidden" disabled={evidenceUploadingId === f.id}
+                              accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.docx,.doc"
+                              onChange={e => { const file = e.target.files?.[0]; if (file) handleEvidenceUpload(f.id, file); e.target.value = '' }} />
+                          </label>
+                          {evidenceError && evidenceUploadingId === null && <p className="text-rose-400 text-[9px]">{evidenceError}</p>}
+                          {Array.isArray(f.evidenceFiles) && f.evidenceFiles.length > 0 && (
+                            <div className="flex flex-col gap-0.5">
+                              {f.evidenceFiles.map((ev: any, i: number) => (
+                                <a key={i} href={`/uploads/evidence/${ev.filename}`} target="_blank" rel="noopener noreferrer"
+                                  className="text-sky-400 hover:underline text-[9px] truncate max-w-[130px]" title={ev.originalName}>
+                                  📄 {ev.originalName}
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       ) : (
-                        <p className="text-slate-400 text-[11px] truncate" title={f.remediationEvidence}>
-                          {f.remediationEvidence || '—'}
-                        </p>
+                        <div className="space-y-0.5">
+                          <p className="text-slate-400 text-[11px] truncate" title={f.remediationEvidence}>
+                            {f.remediationEvidence || '—'}
+                          </p>
+                          {Array.isArray(f.evidenceFiles) && f.evidenceFiles.length > 0 && (
+                            <div className="flex flex-col gap-0.5">
+                              {f.evidenceFiles.map((ev: any, i: number) => (
+                                <a key={i} href={`/uploads/evidence/${ev.filename}`} target="_blank" rel="noopener noreferrer"
+                                  className="text-sky-400 hover:underline text-[9px] truncate max-w-[130px]" title={ev.originalName}>
+                                  📄 {ev.originalName}
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       )}
                     </td>
 
