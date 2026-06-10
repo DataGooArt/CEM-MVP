@@ -115,9 +115,10 @@ model Finding {
   closingNotes         String?   @map("closing_notes")
   archivedAt           DateTime? @map("archived_at")
   // ─── Deduplication ───────────────────────────────────────────
-  contentHash          String?   @map("content_hash")          // SHA-256(assetId|category|title|sourceTool)
-  seenCount            Int       @default(1) @map("seen_count") // incremented on each duplicate ingest
-  lastSeenAt           DateTime? @map("last_seen_at")           // updated every time the same finding reappears
+  contentHash          String?   @map("content_hash")              // SHA-256(assetId|category|title|sourceTool)
+  seenCount            Int       @default(1) @map("seen_count")    // incremented on each duplicate ingest within same open lifecycle
+  lastSeenAt           DateTime? @map("last_seen_at")              // updated every time the same finding reappears
+  recurrenceCount      Int       @default(0) @map("recurrence_count") // incremented each time finding is re-opened after being closed/fixed
   // ─── Scan correlation ────────────────────────────────────────
   scanId               String?   @map("scan_id")               // scanId of the LAST scan that detected this
   firstScanId          String?   @map("first_scan_id")         // scanId of the FIRST scan that detected this
@@ -144,6 +145,8 @@ model AiAnalysis {
   remediation     String
   businessImpact  String?  @map("business_impact")
   remediationPlan Json?    @map("remediation_plan")
+  correlations    Json?    @map("correlations")    // [{ findingId, title, relationship, attackVector? }]
+  attackVector    String?  @map("attack_vector")   // MITRE ATT&CK tactic if identified
   model           String   @default("llama3.2")
   createdAt       DateTime @default(now()) @map("created_at")
   finding         Finding  @relation(fields: [findingId], references: [id], onDelete: Cascade)

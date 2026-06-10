@@ -1,11 +1,5 @@
 import { useState } from 'react'
-import { useAuth, ROLE_META } from './auth'
-
-const DEMO_CREDS = [
-  { email: 'admin@cem.local',      password: 'admin123', role: 'admin'      as const },
-  { email: 'supervisor@cem.local', password: 'super123', role: 'supervisor' as const },
-  { email: 'visor@cem.local',      password: 'visor123', role: 'viewer'     as const },
-]
+import { useAuth } from './auth'
 
 export default function LoginPage() {
   const login      = useAuth(s => s.login)
@@ -19,11 +13,6 @@ export default function LoginPage() {
     setLoading(true)
     await login(email, password)
     setLoading(false)
-  }
-
-  function fillDemo(cred: (typeof DEMO_CREDS)[number]) {
-    setEmail(cred.email)
-    setPassword(cred.password)
   }
 
   return (
@@ -88,30 +77,6 @@ export default function LoginPage() {
           </form>
         </div>
 
-        {/* Demo quick-access */}
-        <div className="space-y-2.5">
-          <p className="text-center text-[10px] text-slate-600 uppercase tracking-widest">
-            Accesos de demostración
-          </p>
-          <div className="grid grid-cols-3 gap-2">
-            {DEMO_CREDS.map(cred => {
-              const meta = ROLE_META[cred.role]
-              return (
-                <button
-                  key={cred.role}
-                  onClick={() => fillDemo(cred)}
-                  className="bg-slate-900 border border-slate-700 hover:border-slate-500 rounded-xl p-3 text-left transition-colors group"
-                >
-                  <span className={`inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded border mb-1.5 ${meta.badgeCls}`}>
-                    {meta.label}
-                  </span>
-                  <p className="text-slate-400 text-[10px] truncate">{cred.email}</p>
-                  <p className="text-slate-600 text-[10px] font-mono tracking-wide">{cred.password}</p>
-                </button>
-              )
-            })}
-          </div>
-        </div>
       </div>
     </div>
   )

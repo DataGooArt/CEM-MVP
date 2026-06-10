@@ -49,8 +49,9 @@ export class FindingsService {
       this.prisma.finding.count({ where: { ...base, status: 'OPEN' } }),
       this.prisma.finding.count({ where: { ...base, severity: 'CRITICAL', status: 'OPEN' } }),
       this.prisma.finding.count({ where: { ...base, severity: 'HIGH',     status: 'OPEN' } }),
-      this.prisma.finding.count({ where: { ...base, status: 'OPEN', seenCount: 1, createdAt: { gte: oneWeekAgo } } }),
-      this.prisma.finding.count({ where: { ...base, status: 'OPEN', seenCount: { gt: 1 } } }),
+      this.prisma.finding.count({ where: { ...base, status: 'OPEN', seenCount: 1, recurrenceCount: 0, createdAt: { gte: oneWeekAgo } } }),
+      // recurring = seen more than once in same lifecycle OR re-opened after being closed
+      this.prisma.finding.count({ where: { ...base, status: 'OPEN', OR: [{ seenCount: { gt: 1 } }, { recurrenceCount: { gt: 0 } }] } }),
     ]);
     return { total, open, critical, high, newThisWeek, recurring };
   }
