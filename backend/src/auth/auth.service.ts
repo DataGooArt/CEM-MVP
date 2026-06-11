@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma.service';
 import { createHash, randomUUID } from 'node:crypto';
 import * as bcrypt from 'bcrypt';
+import * as nodemailer from 'nodemailer';
 import { Redis } from 'ioredis';
 
 const ACCESS_TOKEN_TTL = '15m';
@@ -33,9 +34,77 @@ export class AuthService {
   }
 
   async login(user: any) {
+    if (user.twoFactorEnabled) {
+      // Generate 6-digit OTP, store in Redis for 10 minutes
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      await this.redis.set(`otp:${user.id}`, code, 'EX', 600);
+      await this.sendOtpEmail(user.email, code, user.name).catch((err) => {
+        console.error('[2FA] Failed to send OTP email:', err?.message || err);
+      });
+      // Issue a short-lived pending token (purpose=otp, no access to API)
+      const pendingToken = this.jwtService.sign(
+        { sub: user.id, purpose: 'otp' },
+        { expiresIn: '10m' },
+      );
+      return { requiresOtp: true, pendingToken };
+    }
     const tokens = await this.generateTokens(user);
     await this.saveRefreshToken(user.id, tokens.refreshToken);
     return tokens;
+  }
+
+  async verifyOtp(pendingToken: string, code: string) {
+    let payload: any;
+    try {
+      payload = this.jwtService.verify(pendingToken);
+    } catch {
+      throw new UnauthorizedException('Token de verificación expirado. Inicia sesión de nuevo.');
+    }
+    if (payload.purpose !== 'otp') throw new UnauthorizedException('Token inválido.');
+
+    const stored = await this.redis.get(`otp:${payload.sub}`);
+    if (!stored || stored !== code.trim()) {
+      throw new UnauthorizedException('Código incorrecto o expirado.');
+    }
+    await this.redis.del(`otp:${payload.sub}`);
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      include: { role: true, organization: { select: { id: true, name: true } } },
+    });
+    if (!user || !user.isActive) throw new UnauthorizedException();
+
+    const tokens = await this.generateTokens(user);
+    await this.saveRefreshToken(user.id, tokens.refreshToken);
+    return tokens;
+  }
+
+  async getMe(userId: string) {
+    return this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        twoFactorEnabled: true,
+        role: { select: { name: true } },
+        organization: { select: { id: true, name: true } },
+      },
+    });
+  }
+
+  async toggle2FA(userId: string, enable: boolean, password: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException();
+    if (typeof enable !== 'boolean') throw new UnauthorizedException('El campo enabled debe ser true o false.');
+    const ok = await bcrypt.compare(password, user.passwordHash);
+    if (!ok) throw new UnauthorizedException('Contraseña incorrecta.');
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { twoFactorEnabled: enable },
+      select: { id: true, email: true, name: true, twoFactorEnabled: true },
+    });
+    return updated;
   }
 
   async refreshToken(token: string) {
@@ -128,6 +197,36 @@ export class AuthService {
 
   private hashToken(token: string) {
     return createHash('sha256').update(token).digest('hex');
+  }
+
+  private async sendOtpEmail(email: string, code: string, name: string) {
+    const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
+    if (!SMTP_USER || !SMTP_PASS) return;
+    const transporter = nodemailer.createTransport({
+      host: SMTP_HOST || 'smtp.gmail.com',
+      port: parseInt(SMTP_PORT || '587'),
+      secure: false,
+      auth: { user: SMTP_USER, pass: SMTP_PASS },
+    });
+    await transporter.sendMail({
+      from: `"CEM Platform" <${SMTP_USER}>`,
+      to: email,
+      subject: 'Código de verificación CEM Platform',
+      html: `
+<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px">
+  <div style="background:#0f172a;padding:20px 28px;border-radius:12px 12px 0 0;border:1px solid #1e293b">
+    <h2 style="color:#f1f5f9;margin:0;font-size:18px">Verificación de acceso</h2>
+    <p style="color:#94a3b8;font-size:13px;margin:6px 0 0">CEM — Continuous Exposure Monitoring</p>
+  </div>
+  <div style="background:#1e293b;padding:28px;border-radius:0 0 12px 12px;border:1px solid #334155;border-top:0">
+    <p style="color:#cbd5e1;font-size:14px;margin:0 0 20px">Hola <strong>${name}</strong>, tu código de verificación es:</p>
+    <div style="background:#0f172a;border:1px solid #475569;border-radius:8px;padding:20px;text-align:center;margin-bottom:20px">
+      <span style="font-size:36px;font-weight:700;letter-spacing:12px;color:#38bdf8;font-family:monospace">${code}</span>
+    </div>
+    <p style="color:#64748b;font-size:12px;margin:0">Válido por <strong>10 minutos</strong>. No compartas este código con nadie.</p>
+  </div>
+</div>`,
+    });
   }
 
   private async seedDefaultRoles(orgId: string) {

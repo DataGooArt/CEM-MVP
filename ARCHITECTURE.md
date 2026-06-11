@@ -96,7 +96,7 @@ Cuando se procesa un reporte, los hallazgos se filtran de la siguiente manera:
 *   **Hallazgos recurrentes:** Donde `firstScanId !== currentScanId` pero fueron reconfirmados en el escaneo actual.
 *   **Hallazgos obsoletos:** En estado `OPEN` en la base de datos pero que **no** aparecieron en este escaneo.
 
-## 2. Cálculo de Riesgo (Risk Scoring)
+## 3. Cálculo de Riesgo (Risk Scoring)
 
 El sistema utiliza el `exposureScore` del activo (`Asset`) para determinar la postura de seguridad.
 
@@ -106,7 +106,7 @@ El sistema utiliza el `exposureScore` del activo (`Asset`) para determinar la po
 *   **Delta > 0:** La superficie de exposición ha empeorado (nuevas vulnerabilidades o criticidad aumentada).
 *   **Delta < 0:** Se han mitigado riesgos o cerrado vulnerabilidades.
 
-## 3. Estrategia de Ingesta Asíncrona
+## 4. Estrategia de Ingesta Asíncrona
 
 Para evitar timeouts en el collector (especialmente con salidas grandes como Nmap XML), la API implementa un patrón de **"Recibir y olvidar"** (*fire-and-forget*):
 
@@ -116,29 +116,46 @@ Para evitar timeouts en el collector (especialmente con salidas grandes como Nma
 4.  La API responde inmediatamente con `201 Created` al collector.
 5.  El Worker procesa el archivo crudo en segundo plano.
 
-## 4. Comunicación en Tiempo Real (WebSockets)
+## 5. Comunicación en Tiempo Real (WebSockets)
 
 Se utiliza **Socket.IO** con una estrategia de **Rooms** (salas por organización).
 
 *   **Suscripción:** Al iniciar el dashboard, el cliente emite `join:org { orgId }`.
-*   **Emisión:** El `TelemetryService` publica eventos en Redis. El Gateway de NestJS escucha esos eventos y ejecuta `server.to(room).emit('scan:report_ready', data)`.
+*   **Emisión:** El `TelemetryService` publica eventos (ej: `scan:progress`, `scan:report_ready`). El Gateway de NestJS escucha esos eventos y ejecuta `server.to(room).emit(type, data)`.
 
-## 5. Pipeline de IA
+## 6. Pipeline de IA
 
-El sistema utiliza un enfoque de **Modelos Híbridos (nube/local)** con una estrategia de **Resiliencia (Disyuntor / Circuit Breaker)**:
+El sistema utiliza un enfoque de **Modelos Híbridos (nube/local)** con una estrategia de **Resiliencia (Disyuntor / Circuit Breaker)**. Se divide en dos capacidades principales:
 
-*   **Disyuntor:** Si la API de Gemini falla 3 veces consecutivas, el worker abre el circuito durante 5 minutos y redirige automáticamente todas las peticiones a Ollama (local) para garantizar la disponibilidad.
-*   **Flujo de generación:**
+### A. Generación de Informes y Análisis
+*   **Disparo:** Automático tras scan o manual.
+*   **Contexto:** Se recuperan los 20 hallazgos más críticos del activo.
 
-1.  **Disparo:** El usuario solicita un informe de IA.
-2.  **Construcción de contexto:** El Worker recupera los 20 hallazgos más críticos del escaneo.
-3.  **Ingeniería de prompt:** Se envía a Gemini/Ollama un prompt estructurado con:
-    - Metadatos del activo (dominio, IP).
-    - Estadísticas (Nuevos vs. Recurrentes).
-    - Detalles técnicos de los hallazgos.
-4.  **Fallback:** Si Gemini falla o el disyuntor está abierto, el sistema usa Ollama con el modelo configurado (ej. `qwen3:4b` o `llama3.2`).
+### B. Chat Asistente de Seguridad (AI Chat)
+Integrado en el `AI Panel`, permite al usuario realizar consultas en lenguaje natural sobre el estado de la infraestructura.
+*   **RAG (Retrieval-Augmented Generation) simplificado:** El sistema inyecta el estado actual de los activos y hallazgos críticos en el prompt del sistema para que la IA responda con contexto real.
+*   **Memoria:** Mantiene el hilo de conversación por sesión de usuario.
 
-## 6. Motores de Ingesta (Collectors)
+**Mecanismo de Resiliencia:** Si la API de Gemini falla 3 veces consecutivas, el worker abre el circuito durante 5 minutos y redirige automáticamente todas las peticiones a Ollama (local).
+
+## 7. Seguridad y Autenticación
+
+El sistema implementa seguridad multicapa:
+- **RBAC:** Control de acceso basado en roles (Admin, Auditor, Viewer).
+- **2FA (Two-Factor Auth):** 
+    1. El usuario habilita 2FA en `ConfigView` confirmando su contraseña.
+    2. En el login, tras validar credenciales, se genera un código de 6 dígitos.
+    3. Se envía vía SMTP (Nodemailer) al correo del usuario.
+    4. El token expira en 10 minutos.
+- **Aislamiento Multitenant:** Los datos están filtrados estrictamente por `orgId` a nivel de base de datos y canales de WebSocket.
+
+## 8. Sistema de Notificaciones
+El motor de alertas (`AlertEngine`) procesa hallazgos en tiempo real:
+*   **Reglas:** Los usuarios definen filtros (ej. "Severidad >= HIGH").
+*   **Canales:** Soporte para Email (SMTP) y Webhooks (Slack/Teams).
+*   **Historial:** Auditoría completa de todas las notificaciones enviadas desde el panel de configuración.
+
+## 9. Motores de Ingesta (Collectors)
 
 Existen dos métodos de recolección soportados:
 *   **Collector Dinámico (Python):** Motor basado en plugins que descubre herramientas en `/plugins` y envía hallazgos normalizados uno a uno al API.
