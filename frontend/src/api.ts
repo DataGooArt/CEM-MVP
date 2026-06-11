@@ -419,6 +419,60 @@ export async function cancelAllStaleScans(orgId = 'org_demo') {
   return res.json() as Promise<{ cancelled: number }>
 }
 
+// ─── Notifications ─────────────────────────────────────────────────────
+
+export async function fetchNotifications(opts: { from?: string; to?: string; status?: string } = {}) {
+  const params = new URLSearchParams()
+  if (opts.from)   params.set('from', opts.from)
+  if (opts.to)     params.set('to', opts.to)
+  if (opts.status) params.set('status', opts.status)
+  const q = params.toString()
+  const res = await apiFetch(`${API}/api/v1/notifications${q ? '?' + q : ''}`)
+  if (!res.ok) throw new Error('Failed to fetch notifications')
+  return res.json() as Promise<Array<{
+    id: string; ruleId: string | null; findingId: string | null
+    channel: string; target: string; severity: string; title: string
+    status: string; errorMsg: string | null; sentAt: string
+    rule: { name: string } | null
+  }>>
+}
+
+// ─── AI Chat ───────────────────────────────────────────────────────────
+
+export async function sendAiChat(
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  context?: { findingId?: string; scanId?: string },
+) {
+  const res = await apiFetch(`${API}/api/v1/ai/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages, context }),
+  })
+  if (!res.ok) throw new Error('AI chat request failed')
+  return res.json() as Promise<{ reply: string; model: string }>
+}
+
+// ─── 2FA ─────────────────────────────────────────────────────────────────
+
+export async function fetchMe() {
+  const res = await apiFetch(`${API}/api/v1/auth/me`)
+  if (!res.ok) throw new Error('Failed to fetch profile')
+  return res.json() as Promise<{ id: string; email: string; name: string; twoFactorEnabled: boolean; role: { name: string } }>
+}
+
+export async function toggle2FA(enabled: boolean, password: string) {
+  const res = await apiFetch(`${API}/api/v1/auth/2fa/toggle`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled, password }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as any).message || 'Failed to toggle 2FA')
+  }
+  return res.json() as Promise<{ id: string; email: string; twoFactorEnabled: boolean }>
+}
+
 // ── Scan Sessions ──────────────────────────────────────────────────────────────
 
 // ── Audit Logs ────────────────────────────────────────────────────────────────

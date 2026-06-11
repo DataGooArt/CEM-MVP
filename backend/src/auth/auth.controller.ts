@@ -1,7 +1,7 @@
-import { Controller, Post, Body, UseGuards, Request, Get, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Request, Get, Patch, HttpCode, HttpStatus } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { IsEmail, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsString, IsBoolean, MinLength } from 'class-validator';
 import { AuthService } from './auth.service';
 import { Public } from '../common/public.decorator';
 import { JwtAuthGuard } from './jwt-auth.guard';
@@ -20,6 +20,16 @@ class RegisterDto {
   @IsString() @MinLength(8) password: string;
   @IsString() name: string;
   @IsString() organizationName: string;
+}
+
+class VerifyOtpDto {
+  @IsString() pendingToken: string;
+  @IsString() code: string;
+}
+
+class Toggle2FADto {
+  @IsString() password: string;
+  @IsBoolean() enabled: boolean;
 }
 
 @ApiTags('auth')
@@ -73,6 +83,22 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Obtener datos del usuario autenticado' })
   async me(@Request() req: any) {
-    return req.user;
+    return this.authService.getMe(req.user.userId);
+  }
+
+  @Public()
+  @Post('verify-otp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verificar código OTP del segundo factor' })
+  async verifyOtp(@Body() dto: VerifyOtpDto) {
+    return this.authService.verifyOtp(dto.pendingToken, dto.code);
+  }
+
+  @Patch('2fa/toggle')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Activar o desactivar segundo factor de autenticación' })
+  async toggle2FA(@Request() req: any, @Body() dto: Toggle2FADto) {
+    return this.authService.toggle2FA(req.user.userId, dto.enabled, dto.password);
   }
 }

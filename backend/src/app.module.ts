@@ -23,6 +23,7 @@ import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { UsersModule } from './users/users.module';
 import { RolesModule } from './roles/roles.module';
 import { OrganizationsModule } from './organizations/organizations.module';
+import { AiChatController } from './ai-chat.controller';
 
 @Module({
   imports: [
@@ -37,7 +38,7 @@ import { OrganizationsModule } from './organizations/organizations.module';
     RolesModule,
     OrganizationsModule,
   ],
-  controllers: [FindingsController, CollectorsController, AlertsController, DomainsController, ReportsController],
+  controllers: [FindingsController, CollectorsController, AlertsController, DomainsController, ReportsController, AiChatController],
   providers: [
     PrismaService, FindingsService, CollectorsService, DomainsService,
     NormalizationWorker, AiAnalysisWorker, ScanReportWorker, AlertEngine,

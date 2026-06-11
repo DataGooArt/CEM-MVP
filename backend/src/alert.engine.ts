@@ -41,11 +41,33 @@ export class AlertEngine {
       const severities = rule.severity as string[];
       if (!severities.includes(severity)) continue;
 
-      if (rule.channel === 'webhook') {
-        await this.sendWebhook(rule.target, finding, severity);
-      } else {
-        await this.sendEmail(rule.target, finding, severity);
+      let status = 'SENT';
+      let errorMsg: string | undefined;
+
+      try {
+        if (rule.channel === 'webhook') {
+          await this.sendWebhook(rule.target, finding, severity);
+        } else {
+          await this.sendEmail(rule.target, finding, severity);
+        }
+      } catch (err: any) {
+        status = 'FAILED';
+        errorMsg = err.message;
       }
+
+      // Persist notification log
+      await this.prisma.notification.create({
+        data: {
+          ruleId:    rule.id,
+          findingId: finding.id,
+          channel:   rule.channel,
+          target:    rule.target,
+          severity,
+          title:     finding.title,
+          status,
+          errorMsg,
+        },
+      }).catch(e => this.logger.warn(`Failed to persist notification log: ${e.message}`));
     }
   }
 
