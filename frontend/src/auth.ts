@@ -66,7 +66,10 @@ type Action = 'editRemediation' | 'manageAlerts' | 'manageDomains' | 'accessConf
 interface AuthState {
   user: User | null
   loginError: string | null
+  requiresOtp: boolean
+  pendingOtpToken: string | null
   login: (email: string, password: string) => Promise<boolean>
+  verifyOtp: (code: string) => Promise<boolean>
   logout: () => Promise<void>
   refreshSession: () => Promise<boolean>
   can: (action: Action) => boolean
@@ -82,6 +85,8 @@ export const useAuth = create<AuthState>((set, get) => ({
     return tokenToUser(token, { user: { role: payload.roleName, name: payload.name, permissions: payload.permissions } })
   })(),
   loginError: null,
+  requiresOtp: false,
+  pendingOtpToken: null,
 
   async login(email, password) {
     try {
@@ -96,9 +101,39 @@ export const useAuth = create<AuthState>((set, get) => ({
         return false
       }
       const data = await res.json()
+      // 2FA: server requires OTP verification
+      if (data.requiresOtp) {
+        set({ requiresOtp: true, pendingOtpToken: data.pendingToken, loginError: null })
+        return false
+      }
       saveTokens(data.accessToken, data.refreshToken)
       const user = tokenToUser(data.accessToken, data)
-      set({ user, loginError: null })
+      set({ user, loginError: null, requiresOtp: false, pendingOtpToken: null })
+      return true
+    } catch {
+      set({ loginError: 'Error de conexión con el servidor.' })
+      return false
+    }
+  },
+
+  async verifyOtp(code) {
+    const { pendingOtpToken } = get()
+    if (!pendingOtpToken) return false
+    try {
+      const res = await fetch(`${API}/api/v1/auth/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pendingToken: pendingOtpToken, code }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        set({ loginError: (err as any).message || 'Código incorrecto o expirado.' })
+        return false
+      }
+      const data = await res.json()
+      saveTokens(data.accessToken, data.refreshToken)
+      const user = tokenToUser(data.accessToken, data)
+      set({ user, loginError: null, requiresOtp: false, pendingOtpToken: null })
       return true
     } catch {
       set({ loginError: 'Error de conexión con el servidor.' })

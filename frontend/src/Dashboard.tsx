@@ -15,6 +15,7 @@ import DomainsManager from './DomainsManager'
 import ConfigView from './ConfigView'
 import ScanReports from './ScanReports'
 import ScanLogsView from './ScanLogsView'
+import AiChatPanel from './AiChatPanel'
 
 const ORG = 'org_demo'
 type Tab = 'dashboard' | 'assets' | 'remediation' | 'domains' | 'alerts' | 'config' | 'reports' | 'logs'
@@ -74,6 +75,7 @@ export default function Dashboard() {
   const readOnly = !can('editRemediation')
 
   const isViewer = user?.role === 'viewer'
+  const [chatOpen, setChatOpen] = useState(false)
   const visibleTabs = ALL_TABS.filter(t =>
     !(t.requireAdmin && user?.role !== 'admin') &&
     !(t.viewerHidden && isViewer)
@@ -234,6 +236,24 @@ export default function Dashboard() {
         {tab === 'config'      && <ConfigView />}
         {tab === 'logs'        && <ScanLogsView />}
       </main>
+
+      {/* Floating AI Chat button */}
+      <button
+        onClick={() => setChatOpen(true)}
+        className="fixed bottom-5 right-5 z-40 w-14 h-14 rounded-full bg-sky-600 hover:bg-sky-500 shadow-lg shadow-sky-900/40 flex items-center justify-center transition-colors"
+        title="Chat IA"
+      >
+        <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1 1-.26 2.134-1.3 1.38L17 15.75M5 14.5l-1.803.45c-1.037.26-1.453-1.113-.612-1.67L5 14.5" />
+        </svg>
+      </button>
+
+      {chatOpen && (
+        <AiChatPanel
+          context={{ type: 'general' }}
+          onClose={() => setChatOpen(false)}
+        />
+      )}
     </div>
   )
 }

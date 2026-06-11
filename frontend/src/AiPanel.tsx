@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { fetchAnalysis, triggerAnalysis } from './api'
+import AiChatPanel from './AiChatPanel'
 
 const RISK_COLOR: Record<string, string> = {
   CRITICAL: 'text-rose-400 bg-rose-500/10 border-rose-500/30',
@@ -19,6 +20,7 @@ export default function AiPanel({ finding, onClose }: Props) {
   const queryClient = useQueryClient()
   const [provider, setProvider] = useState<'ollama' | 'gemini'>('ollama')
   const [reanalyzing, setReanalyzing] = useState(false)
+  const [chatOpen, setChatOpen]     = useState(false)
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['analysis', finding.id],
@@ -48,6 +50,13 @@ export default function AiPanel({ finding, onClose }: Props) {
   const isGemini = data?.model?.startsWith('gemini')
 
   return (
+    <>
+    {chatOpen && (
+      <AiChatPanel
+        context={{ type: 'finding', id: finding.id, label: finding.title }}
+        onClose={() => setChatOpen(false)}
+      />
+    )}
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
       <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh]">
         {/* Header */}
@@ -111,6 +120,15 @@ export default function AiPanel({ finding, onClose }: Props) {
                 Re-analyze
               </>
             )}
+          </button>
+          <button
+            onClick={() => setChatOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-700/40 hover:bg-sky-600/50 text-sky-300 border border-sky-600/30 transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-3 3v-3z" />
+            </svg>
+            Chat IA
           </button>
         </div>
 
@@ -228,5 +246,6 @@ export default function AiPanel({ finding, onClose }: Props) {
         </div>{/* end scrollable wrapper */}
       </div>
     </div>
+    </>
   )
 }

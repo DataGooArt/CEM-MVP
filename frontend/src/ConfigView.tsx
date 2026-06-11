@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import UsersManager from './UsersManager'
 import RolesManager from './RolesManager'
-import { fetchMyOrg, updateOrg, uploadOrgLogo } from './api'
+import AlertRules from './AlertRules'
+import NotificationHistory from './NotificationHistory'
+import { fetchMyOrg, updateOrg, uploadOrgLogo, fetchMe, toggle2FA } from './api'
 
 const SYSTEM_SECTIONS = [
   {
@@ -47,9 +50,11 @@ const SYSTEM_SECTIONS = [
 
 const ALL_NAV = [
   ...SYSTEM_SECTIONS.map(s => ({ id: s.id, title: s.title, icon: s.icon })),
-  { id: 'empresa', title: 'Empresa', icon: '🏢' },
-  { id: 'users', title: 'Usuarios', icon: '👤' },
-  { id: 'roles', title: 'Roles', icon: '🔑' },
+  { id: 'empresa',   title: 'Empresa',        icon: '🏢' },
+  { id: 'seguridad', title: 'Seguridad',       icon: '🔒' },
+  { id: 'alertas',   title: 'Alertas',         icon: '🚨' },
+  { id: 'users',     title: 'Usuarios',        icon: '👤' },
+  { id: 'roles',     title: 'Roles',           icon: '🔑' },
 ]
 
 // ─── Org settings form ────────────────────────────────────────────────────────
@@ -138,6 +143,117 @@ function OrgSettingsPanel() {
   )
 }
 
+// ─── Security / 2FA Panel ────────────────────────────────────────────────────
+function SecurityPanel() {
+  const qc = useQueryClient()
+  const { data: me, isLoading } = useQuery({ queryKey: ['me'], queryFn: fetchMe })
+  const [password, setPassword] = useState('')
+  const [msg, setMsg]           = useState<{ text: string; ok: boolean } | null>(null)
+  const [busy, setBusy]         = useState(false)
+  const enabled = me?.twoFactorEnabled ?? false
+
+  async function handleToggle() {
+    if (!password.trim()) {
+      setMsg({ text: 'Debes ingresar tu contraseña actual para confirmar.', ok: false })
+      return
+    }
+    setBusy(true)
+    setMsg(null)
+    try {
+      await toggle2FA(!enabled, password)
+      setMsg({
+        text: enabled
+          ? '2FA desactivado. El próximo inicio de sesión no requerirá código.'
+          : '2FA activado. El próximo inicio de sesión enviará un código de 6 dígitos a tu correo.',
+        ok: true,
+      })
+      setPassword('')
+      qc.invalidateQueries({ queryKey: ['me'] })
+    } catch (e: any) {
+      setMsg({ text: e.message || 'Contraseña incorrecta o error del servidor.', ok: false })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* Status card */}
+      <div className="bg-slate-900 border border-slate-700 rounded-xl p-5 space-y-5">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-lg">🔒</div>
+          <div>
+            <h3 className="text-sm font-semibold text-slate-200">Verificación en dos pasos (2FA)</h3>
+            <p className="text-slate-500 text-xs mt-0.5">Al activarla, cada inicio de sesión requerirá un código de 6 dígitos enviado a tu correo.</p>
+          </div>
+          <div className="ml-auto shrink-0">
+            {isLoading ? (
+              <span className="text-slate-500 text-xs">Cargando…</span>
+            ) : (
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${
+                enabled
+                  ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
+                  : 'text-slate-400 bg-slate-700/40 border-slate-600/40'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${enabled ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+                {enabled ? 'Activo' : 'Inactivo'}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="border-t border-slate-700/60 pt-4 space-y-3">
+          <p className="text-xs text-slate-400 font-medium">
+            {enabled ? 'Para desactivar 2FA, confirma tu contraseña:' : 'Para activar 2FA, confirma tu contraseña:'}
+          </p>
+          <div className="flex gap-2 max-w-sm">
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleToggle()}
+              placeholder="Contraseña actual"
+              className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/30 transition-colors"
+            />
+            <button
+              onClick={handleToggle}
+              disabled={busy || isLoading}
+              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 whitespace-nowrap ${
+                enabled
+                  ? 'bg-rose-700/40 hover:bg-rose-600/50 text-rose-300 border border-rose-600/30'
+                  : 'bg-sky-700/40 hover:bg-sky-600/50 text-sky-300 border border-sky-600/30'
+              }`}
+            >
+              {busy ? 'Guardando…' : enabled ? 'Desactivar 2FA' : 'Activar 2FA'}
+            </button>
+          </div>
+
+          {msg && (
+            <p className={`text-xs px-3 py-2 rounded-lg border ${
+              msg.ok
+                ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/25'
+                : 'text-rose-400 bg-rose-500/10 border-rose-500/25'
+            }`}>
+              {msg.text}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Info card */}
+      <div className="bg-slate-900 border border-slate-700/50 rounded-xl p-5">
+        <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Cómo funciona</h4>
+        <ol className="space-y-2 text-xs text-slate-400">
+          <li className="flex gap-2"><span className="text-sky-400 font-bold shrink-0">1.</span>Activa 2FA ingresando tu contraseña actual.</li>
+          <li className="flex gap-2"><span className="text-sky-400 font-bold shrink-0">2.</span>Al hacer login, el sistema enviará un código de 6 dígitos a <span className="text-slate-300 font-mono">{me?.email ?? '…'}</span></li>
+          <li className="flex gap-2"><span className="text-sky-400 font-bold shrink-0">3.</span>Ingresa el código en la pantalla de verificación. El código expira en 10 minutos.</li>
+          <li className="flex gap-2"><span className="text-sky-400 font-bold shrink-0">4.</span>Si no recibes el correo, verifica la carpeta de spam o desactiva y reactiva 2FA.</li>
+        </ol>
+      </div>
+    </div>
+  )
+}
+
 export default function ConfigView() {
   const [section, setSection]   = useState('Organización')
   const [saved, setSaved]       = useState(false)
@@ -161,7 +277,7 @@ export default function ConfigView() {
           <h2 className="text-xl font-semibold text-slate-200">Configuración del sistema</h2>
           <p className="text-slate-500 text-sm mt-0.5">Parámetros globales, integraciones y gestión de usuarios</p>
         </div>
-        {!['Usuarios', 'Roles', 'Empresa'].includes(section) && (
+        {!['Usuarios', 'Roles', 'Empresa', 'Seguridad', 'Alertas'].includes(section) && (
           <button
             onClick={handleSave}
             className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
@@ -204,6 +320,17 @@ export default function ConfigView() {
             </div>
           ) : section === 'Empresa' ? (
             <OrgSettingsPanel />
+          ) : section === 'Seguridad' ? (
+            <SecurityPanel />
+          ) : section === 'Alertas' ? (
+            <div className="space-y-6">
+              <div className="bg-slate-900 border border-slate-700 rounded-xl p-5">
+                <AlertRules readOnly={false} />
+              </div>
+              <div className="bg-slate-900 border border-slate-700 rounded-xl p-5">
+                <NotificationHistory />
+              </div>
+            </div>
           ) : activeSection ? (
             <div className="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden">
               <div className="px-5 py-4 border-b border-slate-700">

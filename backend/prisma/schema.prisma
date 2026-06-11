@@ -38,12 +38,13 @@ model User {
   name           String
   organizationId String         @map("organization_id")
   roleId         String?        @map("role_id")
-  isActive       Boolean        @default(true) @map("is_active")
-  createdAt      DateTime       @default(now()) @map("created_at")
-  updatedAt      DateTime       @updatedAt @map("updated_at")
-  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  role           Role?          @relation(fields: [roleId], references: [id], onDelete: SetNull)
-  refreshTokens  RefreshToken[]
+  isActive          Boolean        @default(true) @map("is_active")
+  twoFactorEnabled  Boolean        @default(false) @map("two_factor_enabled")
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+  organization      Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role              Role?          @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  refreshTokens     RefreshToken[]
   @@index([organizationId])
   @@index([email])
   @@map("users")
@@ -226,14 +227,34 @@ model ScanReport {
 }
 
 model AlertRule {
-  id        String   @id @default(cuid())
-  name      String
-  severity  String[] // e.g. ["CRITICAL","HIGH"]
-  channel   String   @default("email")
-  target    String   // email address or webhook URL
-  enabled   Boolean  @default(true)
-  createdAt DateTime @default(now()) @map("created_at")
+  id            String         @id @default(cuid())
+  name          String
+  severity      String[]       // e.g. ["CRITICAL","HIGH"]
+  channel       String         @default("email")
+  target        String         // email address or webhook URL
+  enabled       Boolean        @default(true)
+  createdAt     DateTime       @default(now()) @map("created_at")
+  notifications Notification[]
   @@map("alert_rules")
+}
+
+// ─── Notification Log — registro de alertas enviadas ─────────────────────
+model Notification {
+  id        String     @id @default(cuid())
+  ruleId    String?    @map("rule_id")
+  findingId String?    @map("finding_id")
+  channel   String
+  target    String
+  severity  String
+  title     String
+  status    String     @default("SENT")    // SENT | FAILED
+  errorMsg  String?    @map("error_msg")
+  sentAt    DateTime   @default(now()) @map("sent_at")
+  rule      AlertRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  @@index([findingId])
+  @@index([ruleId])
+  @@index([sentAt])
+  @@map("notifications")
 }
 
 // ─── Audit Log — trazabilidad completa de cada hallazgo ──────────────────────

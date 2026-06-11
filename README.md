@@ -53,6 +53,7 @@ CEM MVP v2 está diseñado como un conjunto de **microservicios independientes**
 - **IA Híbrida:** Google Gemini (nube) con fallback automático a Ollama (local/autoalojado). Circuit breaker incluido.
 - **Motor Collector:** Python 3 + Flask + Waitress (15 plugins de seguridad).
 - **Infraestructura:** Docker Compose v2 (orquestación completa de microservicios).
+- **Seguridad:** Autenticación de Dos Factores (2FA) integrada.
 
 ### 🛠️ Plugins de Seguridad (Collector)
 - **Red y Descubrimiento:** Nmap, Subfinder, Amass, Httpx

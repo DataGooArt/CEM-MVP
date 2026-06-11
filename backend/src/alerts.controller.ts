@@ -14,19 +14,19 @@ const ALLOWED_CHANNELS   = ['email', 'webhook'] as const;
 
 class CreateAlertRuleDto {
   @IsString()
-  name: string;
+  name!: string;
 
   @IsArray()
   @ArrayMinSize(1)
   @IsIn(ALLOWED_SEVERITIES, { each: true })
-  severity: string[];
+  severity!: string[];
 
   @IsString()
   @IsIn(ALLOWED_CHANNELS)
-  channel: string;
+  channel!: string;
 
   @IsString()
-  target: string;
+  target!: string;
 
   @IsOptional()
   @IsBoolean()
@@ -181,6 +181,30 @@ Devuelve ÚNICAMENTE este JSON:
   @Get('alerts/rules')
   async listRules() {
     return this.prisma.alertRule.findMany({ orderBy: { createdAt: 'desc' } });
+  }
+
+  // ── Notifications Log ─────────────────────────────────────────────────────
+
+  @Get('notifications')
+  async listNotifications(
+    @Query('from')    from?:    string,
+    @Query('to')      to?:      string,
+    @Query('status')  status?:  string,
+    @Query('limit')   limit?:   string,
+  ) {
+    const where: any = {};
+    if (status) where.status = status.toUpperCase();
+    if (from || to) {
+      where.sentAt = {};
+      if (from) where.sentAt.gte = new Date(from);
+      if (to)   where.sentAt.lte = new Date(to + 'T23:59:59Z');
+    }
+    return this.prisma.notification.findMany({
+      where,
+      orderBy: { sentAt: 'desc' },
+      take: Math.min(Number(limit) || 100, 500),
+      include: { rule: { select: { name: true } } },
+    });
   }
 
   // ── Audit Log ─────────────────────────────────────────────────────────────

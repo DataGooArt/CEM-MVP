@@ -17,6 +17,10 @@ services:
       - COLLECTOR_URL=${COLLECTOR_URL:-http://collector:5000}
       - API_INTERNAL_URL=${API_INTERNAL_URL:-http://api:3001}
       - JWT_SECRET=${JWT_SECRET:-cem-jwt-secret-change-in-production}
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
     volumes:
       - uploads:/app/uploads
     depends_on:
